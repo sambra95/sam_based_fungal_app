@@ -59,8 +59,10 @@ ensure_global_state()
 
 with st.sidebar:
 
+    st.markdown("### App panels for different tasks:")
+
     panel = st.radio(
-        "Panels",
+        "",
         ["Upload data", "Create and Edit Masks", "Classify Cells"],
         key="side_panel",
     )

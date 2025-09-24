@@ -54,6 +54,8 @@ def render_sidebar(*, key_ns: str = "side"):
         key=f"{key_ns}_show_overlay",
     )
 
+    st.markdown("### Create and edit cell masks:")
+
     st.radio(
         "Select action to perform:",
         ["Draw box", "Remove box", "Draw mask", "Remove mask"],
@@ -91,6 +93,7 @@ def render_sidebar(*, key_ns: str = "side"):
         cur["active"] = []
         cur["history"] = []
         cur["last_click_xy"] = None
+        cur.pop("classes", None)
         st.rerun()
 
     if c5.button(
@@ -362,13 +365,35 @@ def render_main(
             y0 = int(round(int(click["y"]) / scale))
             if 0 <= x0 < W and 0 <= y0 < H and (x0, y0) != cur["last_click_xy"]:
                 if cur.get("masks") is not None and cur["masks"].size:
-                    cur["history"].append(cur["active"].copy())
-                    cur["active"] = (
-                        # toggle_at_point expects (active, masks, x, y)
-                        # reuse helper to flip hit mask
-                        toggle_at_point(cur["active"], cur["masks"], x0, y0)
+
+                    # --- find which instance you clicked (BEFORE toggling) ---
+                    m = np.asarray(cur["masks"])
+                    a = cur.get("active", [True] * (m.shape[0] if m.ndim == 3 else 1))
+                    if m.ndim == 2:
+                        m, a = m[None, ...], [True]
+                    elif m.ndim == 3 and m.shape[-1] == 1:
+                        m = m[..., 0]
+                    keep = [i for i, t in enumerate(a) if t]
+                    m_active = (m[keep] if keep else np.zeros((0, H, W), np.uint8)) > 0
+                    from helpers.masks import stack_to_instances_binary_first
+
+                    inst = (
+                        stack_to_instances_binary_first(m_active)
+                        if m_active.size
+                        else np.zeros((H, W), np.uint16)
                     )
+                    inst_id = int(inst[y0, x0])
+
+                    # --- toggle the mask at the click ---
+                    cur["history"].append(cur["active"].copy())
+                    cur["active"] = toggle_at_point(cur["active"], cur["masks"], x0, y0)
                     cur["last_click_xy"] = (x0, y0)
+
+                    # --- remove its label if it had one ---
+                    if inst_id > 0:
+                        cur.setdefault("classes", {}).pop(inst_id, None)
+
+                    # if nothing left active, clear masks AND labels
                     if (
                         cur["masks"] is not None
                         and cur["masks"].size
@@ -377,6 +402,8 @@ def render_main(
                         cur["masks"] = None
                         cur["active"] = []
                         cur["history"] = []
+                        cur.pop("classes", None)
+
                     st.rerun()
 
     else:  # "Remove box"

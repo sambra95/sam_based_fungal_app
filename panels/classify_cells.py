@@ -153,7 +153,7 @@ def render_sidebar(*, key_ns: str = "side"):
     )
 
     # --- Class selection & creation (sidebar) ---
-    st.markdown("### Classes")
+    st.markdown("### Assign classes to cell masks:")
 
     # keep a global list of labels
     labels = st.session_state.setdefault("all_classes", ["positive", "negative"])
@@ -178,12 +178,69 @@ def render_sidebar(*, key_ns: str = "side"):
         st.session_state["side_current_class"] = new_label
         st.rerun()
 
-    # One button: build dataset
+    # One button: build dataset + prepare labeled ZIP
     if st.button(
-        "Create classifier dataset", use_container_width=True, key=f"{key_ns}_build"
+        "Download classifier dataset", use_container_width=True, key=f"{key_ns}_build"
     ):
-        _build_classifier_dataset(patch_size=256)
-        st.success("Classifier dataset created.")
+        _build_classifier_dataset(
+            patch_size=256
+        )  # fills classifier_records_df & classifier_patches
+
+        df = st.session_state.get("classifier_records_df", pd.DataFrame()).copy()
+        patches = st.session_state.get("classifier_patches", {})
+        if df.empty:
+            st.warning("No segments found.")
+        else:
+            # fill 'class' from per-image assignments in records
+            def _stem(n: str) -> str:
+                from pathlib import Path
+
+                return Path(n).stem
+
+            def _assigned_label(row):
+                base = row["image"].rsplit("_mask", 1)[0]
+                inst_id = int(row["mask number"])
+                rec = next(
+                    (
+                        r
+                        for r in st.session_state.images.values()
+                        if _stem(r["name"]) == base
+                    ),
+                    None,
+                )
+                return None if rec is None else rec.get("classes", {}).get(inst_id)
+
+            df["class"] = df.apply(_assigned_label, axis=1)
+            df = df[df["class"].notna()].copy()  # keep only labeled
+
+            if df.empty:
+                st.warning(
+                    "No labeled segments yet — assign classes by clicking masks."
+                )
+            else:
+                # zip labeled images + labels.csv
+                import io
+                from zipfile import ZipFile
+
+                buf = io.BytesIO()
+                with ZipFile(buf, "w") as zf:
+                    zf.writestr("labels.csv", df.to_csv(index=False).encode("utf-8"))
+                    for fname in df["image"]:
+                        data = patches.get(fname)
+                        if data is not None:
+                            zf.writestr(f"images/{fname}", data)
+                buf.seek(0)
+
+                st.download_button(
+                    "Download classifier dataset (zip)",
+                    data=buf.getvalue(),
+                    file_name="classifier_dataset.zip",
+                    mime="application/zip",
+                    use_container_width=True,
+                )
+                # optionally keep filtered table in state for main-panel display
+                st.session_state["classifier_records_df"] = df
+                st.success(f"Prepared {len(df)} labeled patches.")
 
 
 def render_main(
@@ -229,8 +286,6 @@ def render_main(
 
         # ensure helper state
         ss = st.session_state
-        ss.setdefault("pred_canvas_nonce", 0)
-        ss.setdefault("edit_canvas_nonce", 0)
 
         click = streamlit_image_coordinates(
             display_for_ui, key=f"{key_ns}_img_click", width=disp_w
@@ -279,14 +334,3 @@ def render_main(
 
     """Main content for the classifier panel."""
     df = st.session_state.get("classifier_records_df")
-    if df is None or df.empty:
-        st.info("No classifier dataset yet. Use the sidebar to create it.")
-        return
-
-    # Display the table exactly as requested
-    st.subheader("Segments")
-    if cur and cur.get("classes"):
-        df = pd.DataFrame(
-            [{"mask number": k, "class": v} for k, v in sorted(cur["classes"].items())]
-        )
-        st.dataframe(df, use_container_width=True)
