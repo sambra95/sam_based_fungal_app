@@ -69,20 +69,6 @@ def _maybe_reorder_to_nhw(arr: np.ndarray) -> np.ndarray:
     raise ValueError(f"Unsupported mask array shape {a.shape}")
 
 
-def _instances_to_stack(inst: np.ndarray) -> np.ndarray:
-    """
-    (H,W) int labels -> (N,H,W) uint8 binary with IDs 1..N.
-    """
-    inst = np.asarray(inst)
-    if inst.ndim != 2:
-        raise ValueError(f"Expected 2D instance map, got {inst.shape}")
-    max_id = int(inst.max(initial=0))
-    if max_id == 0:
-        return np.zeros((0, *inst.shape), dtype=np.uint8)
-    out = np.stack([(inst == i).astype(np.uint8) for i in range(1, max_id + 1)], axis=0)
-    return out
-
-
 def _load_tiff(fp) -> np.ndarray:
     arr = tiff.imread(fp)
     # Instance map?

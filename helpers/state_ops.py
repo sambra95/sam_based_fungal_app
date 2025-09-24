@@ -3,6 +3,47 @@ import numpy as np
 import streamlit as st
 from PIL import Image
 from .masks import _resize_mask_nearest
+import streamlit as st
+
+
+def ensure_global_state() -> None:
+    """Initialize all session-state keys used across panels."""
+    ss = st.session_state
+
+    # app-level state
+    ss.setdefault("images", {})  # {order_key:int -> record:dict}
+    ss.setdefault("name_to_key", {})  # {filename:str -> order_key:int}
+    ss.setdefault("current_key", None)  # active order_key
+    ss.setdefault("next_ord", 1)  # next order_key to assign
+    ss.setdefault("_img_files", [])  # raw UploadedFile refs (optional)
+
+    # UI defaults / nonces
+    ss.setdefault("pred_canvas_nonce", 0)
+    ss.setdefault("edit_canvas_nonce", 0)
+    ss.setdefault("mask_uploader_nonce", 0)
+    ss.setdefault("image_uploader_nonce", 0)
+    ss.setdefault("show_overlay", True)
+    ss.setdefault("interaction_mode", "Draw box")
+    ss.setdefault("side_panel", "Upload data")
+    st.session_state.setdefault(f"side_interaction_mode", "Draw box")
+    st.session_state.setdefault(f"side_show_overlay", True)
+
+    # Ensure each image record has the expected fields
+    for rec in ss["images"].values():
+        rec.setdefault("name", "")
+        rec.setdefault("image", None)  # np.uint8 (H,W,3)
+        rec.setdefault("H", 0)
+        rec.setdefault("W", 0)
+        rec.setdefault("masks", None)  # (N,H,W) uint8 or None
+        rec.setdefault("active", [])  # list[bool], len N
+        rec.setdefault("history", [])  # list of previous 'active'
+        rec.setdefault("boxes", [])  # list of (x0,y0,x1,y1)
+        rec.setdefault("last_click_xy", None)
+        rec.setdefault("canvas", {"closed_json": None, "processed_count": 0})
+
+
+def stem(p: str) -> str:
+    return Path(p).stem
 
 
 def image_key(uploaded_file) -> str:
@@ -11,38 +52,51 @@ def image_key(uploaded_file) -> str:
 
 
 def ensure_image(uploaded_file):
-    key = image_key(uploaded_file)
-    if key not in st.session_state.images:
-        img_np = Image.open(uploaded_file).convert("RGB")
-        img_np = np.array(img_np, dtype=np.uint8)
-        H, W = img_np.shape[:2]
-        st.session_state.images[key] = {
-            "name": uploaded_file.name,
-            "image": img_np,
-            "H": H,
-            "W": W,
-            "masks": None,
-            "active": [],
-            "history": [],
-            "boxes": [],
-            "last_click_xy": None,
-            "canvas": {"closed_json": None, "processed_count": 0},
-            "pred_canvas_init": None,
-        }
-        st.session_state.image_order.append(key)
-    st.session_state.current_key = key
+    name = uploaded_file.name
+    m = st.session_state.name_to_key
+    imgs = st.session_state.images
+
+    # already have it → focus it
+    if name in m:
+        st.session_state.current_key = m[name]
+        return
+
+    # new record
+    img_np = np.array(Image.open(uploaded_file).convert("RGB"), dtype=np.uint8)
+    H, W = img_np.shape[:2]
+    k = st.session_state.next_ord
+    st.session_state.next_ord += 1
+
+    imgs[k] = {
+        "name": name,
+        "image": img_np,
+        "H": H,
+        "W": W,
+        "masks": None,
+        "active": [],
+        "history": [],
+        "boxes": [],
+        "last_click_xy": None,
+        "canvas": {"closed_json": None, "processed_count": 0},
+    }
+    m[name] = k
+    st.session_state.current_key = k
 
 
-def current() -> dict | None:
-    key = st.session_state.current_key
-    return None if key is None else st.session_state.images.get(key)
+def ordered_keys():
+    return sorted(st.session_state.images.keys())
+
+
+def current():
+    k = st.session_state.get("current_key")
+    return st.session_state.images.get(k) if k is not None else None
 
 
 def set_current_by_index(idx: int):
-    order = st.session_state.image_order
-    if not order:
+    ok = ordered_keys()
+    if not ok:
         return
-    st.session_state.current_key = order[idx % len(order)]
+    st.session_state.current_key = ok[idx % len(ok)]
 
 
 def set_masks(masks_u8: np.ndarray):
@@ -71,10 +125,9 @@ def add_drawn_mask(mask_u8: np.ndarray):
         cur["active"].append(True)
 
 
-def get_uploaded_images_list():
-    files = st.session_state.get("_img_files")
-    if not files:
-        files = st.session_state.get("u_imgs")
-        if files:
-            st.session_state["_img_files"] = files
-    return files or []
+def delete_record(order_key: int):
+    rec = st.session_state.images.pop(order_key, None)
+    if rec:
+        st.session_state.name_to_key.pop(rec["name"], None)
+    ok = ordered_keys()
+    st.session_state.current_key = ok[0] if ok else None
