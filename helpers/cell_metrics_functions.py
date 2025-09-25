@@ -142,3 +142,44 @@ def _build_analysis_df() -> pd.DataFrame:
                 }
             )
     return pd.DataFrame(rows)
+
+
+def build_image_summary_df() -> pd.DataFrame:
+    rows = []
+    for k in ordered_keys():
+        rec = st.session_state.images[k]
+        masks = rec.get("masks")
+        labs = list(rec.get("labels", []))
+        base = _stem(rec["name"])
+
+        if masks is None:
+            continue
+
+        group_counts = {}
+        total = 0
+        N = masks.shape[0]
+
+        for i in range(N):
+            m = masks[i]
+            if not np.any(m):
+                continue
+
+            # Determine group label
+            raw_lab = labs[i] if i < len(labs) else None
+            group = raw_lab if (raw_lab is not None and raw_lab != "") else "Unlabelled"
+
+            # Count how many connected components are inside this mask
+            n_components = len(regionprops(label(m)))
+            total += n_components
+            group_counts[group] = group_counts.get(group, 0) + n_components
+
+        # Build row: total + group counts
+        row = {"image": base, "total cells": total}
+        row.update(group_counts)
+        rows.append(row)
+
+    # Normalize to DataFrame
+    df = pd.DataFrame(rows).fillna(0).set_index("image")
+    # Ensure integer columns
+    df = df.astype(int)
+    return df.reset_index()

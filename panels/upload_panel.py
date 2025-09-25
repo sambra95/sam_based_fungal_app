@@ -66,24 +66,28 @@ def render_main():
         st.info("No images uploaded yet.")
     else:
         # header
-        h1, h2, h3, h4 = st.columns([4, 2, 2, 2])
+        h1, h2, h3, h4, h5 = st.columns([4, 2, 2, 2, 2])
         h1.markdown("**Image**")
         h2.markdown("**Mask present**")
         h3.markdown("**Number of cells**")
-        h4.markdown("**Remove**")
+        h4.markdown("**Labelled Masks**")
+        h5.markdown("**Remove**")
 
         # rows
         for k in ok:
+
             rec = st.session_state.images[k]
             masks = rec.get("masks")
+            number_labels = len([x for x in rec.get("labels") if x != None])
             has_mask = bool(masks is not None and getattr(masks, "size", 0) > 0)
             n_cells = int(masks.shape[0]) if has_mask else 0
 
-            c1, c2, c3, c4 = st.columns([4, 2, 2, 2])
+            c1, c2, c3, c4, c5 = st.columns([4, 2, 2, 2, 2])
             c1.write(rec["name"])
             c2.write("✅" if has_mask else "❌")
             c3.write(n_cells)
-            if c4.button("Remove", key=f"remove_{k}"):
+            c4.write(f"{number_labels}/{n_cells}")
+            if c5.button("Remove", key=f"remove_{k}"):
                 # delete and fix current selection
                 del st.session_state.images[k]
                 ok2 = ordered_keys()
