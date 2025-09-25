@@ -23,11 +23,14 @@ from helpers.state_ops import (
 # ---------- Import App Panels --------
 # ============================================================
 
-from panels import upload_panel, mask_editing_panel, classify_cells_panel
-
+from panels import (
+    upload_panel,
+    mask_editing_panel,
+    classify_cells_panel,
+    cell_metrics_panel,
+)
 
 st.set_page_config(page_title="Mask Toggle", layout="wide")
-
 
 # ============================================================
 # ---------- Ensure consistant default s --------
@@ -46,7 +49,7 @@ with st.sidebar:
 
     panel = st.radio(
         "",
-        ["Upload data", "Create and Edit Masks", "Classify Cells"],
+        ["Upload data", "Create and Edit Masks", "Classify Cells", "Cell Metrics"],
         key="side_panel",
     )
 
@@ -57,6 +60,10 @@ with st.sidebar:
 
     elif panel == "Classify Cells":
         classify_cells_panel.render_sidebar(key_ns="side")
+
+    elif panel == "Cell Metrics":
+
+        cell_metrics_panel.render_sidebar()
 
 
 # ============================================================
@@ -75,3 +82,7 @@ elif panel == "Create and Edit Masks":
 elif panel == "Classify Cells":
 
     classify_cells_panel.render_main(key_ns="classify")
+
+elif panel == "Cell Metrics":
+
+    cell_metrics_panel.render_main()

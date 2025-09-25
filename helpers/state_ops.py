@@ -16,6 +16,7 @@ def ensure_global_state() -> None:
     ss.setdefault("current_key", None)  # active order_key
     ss.setdefault("next_ord", 1)  # next order_key to assign
     ss.setdefault("_img_files", [])  # raw UploadedFile refs (optional)
+    ss.setdefault("analysis_plots", [])
 
     # UI defaults / nonces
     ss.setdefault("pred_canvas_nonce", 0)
