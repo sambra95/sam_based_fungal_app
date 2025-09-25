@@ -5,6 +5,69 @@ from pathlib import Path
 from zipfile import ZipFile
 import numpy as np
 import tifffile as tiff
+import streamlit as st
+import torch
+from sam2.build_sam import build_sam2
+from sam2.sam2_image_predictor import SAM2ImagePredictor
+from contextlib import nullcontext
+from helpers import config as cfg  # CKPT_PATH, CFG_PATH
+import numpy as np
+from PIL import Image, ImageDraw
+from typing import List, Tuple, Dict, Any
+
+
+# ============================================================
+# ---------------- MAKE AND EDIT BOXES -----------------------
+# ============================================================
+
+
+def is_unique_box(box, boxes):
+    x0, y0, x1, y1 = box
+    for b in boxes:
+        if b == (x0, y0, x1, y1):
+            return False
+    return True
+
+
+def boxes_to_fabric_rects(boxes, scale=1.0) -> Dict[str, Any]:
+    rects = []
+    for x0, y0, x1, y1 in boxes:
+        rects.append(
+            {
+                "type": "rect",
+                "left": x0 * scale,
+                "top": y0 * scale,
+                "width": (x1 - x0) * scale,
+                "height": (y1 - y0) * scale,
+                "fill": "rgba(0, 0, 255, 0.25)",
+                "stroke": "white",
+                "strokeWidth": 2,
+                "selectable": False,
+                "evented": False,
+                "hasControls": False,
+                "lockMovementX": True,
+                "lockMovementY": True,
+                "hoverCursor": "crosshair",
+            }
+        )
+    return {"objects": rects}
+
+
+def draw_boxes_overlay(image_u8, boxes, alpha=0.25, outline_px=2):
+    base = Image.fromarray(image_u8).convert("RGBA")
+    overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(overlay)
+    fill = (0, 0, 255, int(alpha * 255))
+    for x0, y0, x1, y1 in boxes:
+        d.rectangle(
+            [x0, y0, x1, y1], fill=fill, outline=(255, 255, 255, 255), width=outline_px
+        )
+    return np.array(Image.alpha_composite(base, overlay).convert("RGB"), dtype=np.uint8)
+
+
+# ============================================================
+# ---------------- MAKE AND EDIT MASKS -----------------------
+# ============================================================
 
 
 def _resize_mask_nearest(mask_u8, out_h, out_w):
@@ -30,60 +93,36 @@ def polygon_to_mask(obj, h, w):
     return np.array(mask_img, dtype=np.uint8)
 
 
-def toggle_at_point(active, masks_u8, x, y):
-    if masks_u8 is None or not masks_u8.size:
-        return active
-    hits = [i for i in range(masks_u8.shape[0]) if active[i] and masks_u8[i, y, x] > 0]
-    if hits:
-        active[hits[-1]] = not active[hits[-1]]
-    return active
-
-
-def composite_over(image_u8, masks_u8, active, alpha=0.5):
-    """
-    Overlay active masks in red + white outline onto image_u8.
-    Accepts masks shaped (H,W), (N,H,W), (N,H,W,1/3), or (H,W,1/3).
-    Does NOT auto-transpose on square images.
-    """
+def composite_over(image_u8, masks_u8, alpha=0.5):
     H, W = image_u8.shape[:2]
     m = np.asarray(masks_u8)
 
-    # Coerce to (N,H,W) WITHOUT any transpose guesses
+    # Coerce to (N,H,W) WITHOUT transpose guesses
     if m.ndim == 2:
         m = m[None, ...]
     elif m.ndim == 3:
-        # (H,W,1/3) -> drop channel; else assume already (N,H,W)
         if m.shape[-1] in (1, 3) and m.shape[:2] == (H, W):
             m = m[..., 0][None, ...]
     elif m.ndim == 4:
-        # (N,H,W,1/3) -> drop channel; (N,1/3,H,W) -> take first channel
         if m.shape[-1] in (1, 3):
             m = m[..., 0]
         elif m.shape[1] in (1, 3):
             m = m[:, 0, ...]
-        # else: assume already (N,H,W) after channel handling
 
-    # Final shape guard
     if m.ndim == 2:
         m = m[None, ...]
     if m.shape[-2:] != (H, W):
-        m = np.stack(
-            [_resize_mask_nearest(mi.astype(np.uint8), H, W) for mi in m], axis=0
-        )
+        m = np.stack([_resize_mask_nearest(mi.astype(np.uint8), H, W) for mi in m], 0)
 
     masks = (m > 0).astype(np.uint8)
     N = masks.shape[0]
-    if not isinstance(active, (list, tuple)) or len(active) != N:
-        active = [True] * N
 
     out = image_u8.astype(np.float32) / 255.0
     red = np.array([1.0, 0.0, 0.0], dtype=np.float32)
 
-    for i in range(N):
-        if not active[i]:
-            continue
-        mi = (masks[i] > 0).astype(np.float32)  # (H,W)
-        a = (mi * alpha)[..., None]  # (H,W,1)
+    for i in range(N):  # no active filtering; draw all remaining masks
+        mi = (masks[i] > 0).astype(np.float32)
+        a = (mi * alpha)[..., None]
         out = out * (1 - a) + red[None, None, :] * a
 
         mb = mi.astype(bool)
@@ -100,33 +139,89 @@ def composite_over(image_u8, masks_u8, active, alpha=0.5):
     return (np.clip(out, 0, 1) * 255).astype(np.uint8)
 
 
-def _attach_masks_to_image(rec, new_masks):
-    """Normalize/resize and attach masks to the given image record."""
-    m = np.asarray(new_masks)
-    # normalize shape to (N,H,W) without transpose guesses
-    if m.ndim == 4 and m.shape[-1] in (1, 3):
-        m = m[..., 0]
-    if m.ndim == 3 and m.shape[-1] in (1, 3):
-        m = m[..., 0][None, ...]
-    if m.ndim == 2:
-        m = m[None, ...]
-    # resize to image size
-    H, W = rec["H"], rec["W"]
-    if m.shape[-2:] != (H, W):
-        m = np.stack(
-            [_resize_mask_nearest(mi.astype(np.uint8), H, W) for mi in m], axis=0
-        )
-    m = (m > 0).astype(np.uint8)
+def _run_sam2_on_boxes(cur: dict):
+    """Predict with SAM2 for the current record's boxes and return a (B,H,W) uint8 stack."""
+    boxes = np.array(cur["boxes"], dtype=np.float32)
+    if boxes.size == 0:
+        st.info("No boxes drawn yet.")
+        return np.zeros((0, cur["H"], cur["W"]), dtype=np.uint8)
 
-    # append instead of overwrite (match your Predict behavior)
-    if rec.get("masks") is None or rec["masks"].size == 0:
-        rec["masks"] = m
-        rec["active"] = [True] * m.shape[0]
-        rec["history"] = []
-    else:
-        rec["masks"] = np.concatenate([rec["masks"], m], axis=0)
-        rec["active"].extend([True] * m.shape[0])
-        rec["history"] = []
+    w = boxes[:, 2] - boxes[:, 0]
+    h = boxes[:, 3] - boxes[:, 1]
+    boxes = boxes[(w > 0) & (h > 0)]
+    if boxes.size == 0:
+        st.info("All boxes were empty.")
+        return np.zeros((0, cur["H"], cur["W"]), dtype=np.uint8)
+
+    device = (
+        "cuda"
+        if torch.cuda.is_available()
+        else ("mps" if torch.backends.mps.is_available() else "cpu")
+    )
+    sam = build_sam2(
+        cfg.CFG_PATH, cfg.CKPT_PATH, device=device, apply_postprocessing=False
+    )
+    predictor = SAM2ImagePredictor(sam)
+
+    amp = (
+        torch.autocast("cuda", dtype=torch.bfloat16)
+        if device == "cuda"
+        else nullcontext()
+    )
+    with torch.inference_mode():
+        with amp:
+            predictor.set_image(cur["image"])
+
+    masks, scores, _ = predictor.predict(
+        point_coords=None,
+        point_labels=None,
+        box=boxes,
+        multimask_output=True,
+    )
+
+    # Handle torch tensors or numpy
+    if isinstance(masks, torch.Tensor):
+        masks = masks.detach().cpu().numpy()
+    if isinstance(scores, torch.Tensor):
+        scores = scores.detach().cpu().numpy()
+
+    # masks is (B, M, H, W); pick best per box -> (B, H, W)
+    best_idx = scores.argmax(-1)  # (B,)
+    row_idx = np.arange(scores.shape[0])  # (B,)
+    masks_best = masks[row_idx, best_idx, ...]  # (B,H,W)
+
+    # --- Normalize to canonical stack: uint8 {0,1}, correct (H,W) ---
+    H, W = cur["H"], cur["W"]
+    # If SAM already returns bool, astype handles it; if float, >0 handles it.
+    masks_best = (masks_best > 0).astype(np.uint8)
+
+    if masks_best.shape[-2:] != (H, W):
+        masks_best = np.stack(
+            [_resize_mask_nearest(mi, H, W) for mi in masks_best], axis=0
+        ).astype(np.uint8)
+
+    # Ensure contiguous (helps later concatenations)
+    return np.ascontiguousarray(masks_best, dtype=np.uint8)
+
+
+def append_masks_to_rec(rec: dict, new_masks: np.ndarray):
+    H, W = rec["H"], rec["W"]
+    if not isinstance(rec.get("masks"), np.ndarray) or rec["masks"].ndim != 3:
+        rec["masks"] = np.zeros((0, H, W), dtype=np.uint8)
+    rec.setdefault("labels", [])
+
+    nm = np.asarray(new_masks)
+    if nm.size == 0:
+        return rec
+    if nm.ndim == 2:
+        nm = nm[None, ...]  # (1,H,W)
+    if nm.shape[-2:] != (H, W):
+        nm = np.stack([_resize_mask_nearest(mi.astype(np.uint8), H, W) for mi in nm], 0)
+    nm = (nm > 0).astype(np.uint8)  # binary uint8
+
+    rec["masks"] = np.concatenate([rec["masks"], nm], axis=0)
+    rec["labels"].extend([None] * nm.shape[0])
+    return rec
 
 
 def zip_all_masks(images: dict, keys: list[int]) -> bytes:
@@ -141,9 +236,6 @@ def zip_all_masks(images: dict, keys: list[int]) -> bytes:
                 inst = np.zeros((H, W), np.uint16)
             else:
                 m = np.asarray(m)
-                a = rec.get("active")
-                if isinstance(a, list) and len(a) == m.shape[0]:
-                    m = m[[i for i, t in enumerate(a) if t]]
                 if m.size == 0:
                     inst = np.zeros((H, W), np.uint16)
                 else:
@@ -198,9 +290,6 @@ def stack_to_instances_binary_first(m: np.ndarray) -> np.ndarray:
     return inst
 
 
-import numpy as np
-
-
 def get_class_palette(labels, *, ss_key="class_colors"):
     """Persistent {class -> RGB float tuple} in session_state."""
     import streamlit as st
@@ -222,25 +311,12 @@ def get_class_palette(labels, *, ss_key="class_colors"):
     return pal
 
 
-def composite_over_by_class(
-    image_u8, masks_u8, active, classes_map, palette, alpha=0.5
-):
-    """
-    Overlay active instances colored by class.
-    - classes_map: {instance_id:int -> class:str}
-    - palette: {class:str -> (r,g,b) floats 0..1}
-    """
-    from .masks import (
-        _resize_mask_nearest,
-        stack_to_instances_binary_first,
-    )  # reuse your helpers
-
+def composite_over_by_class(image_u8, masks_u8, classes_map, palette, alpha=0.5):
     H, W = image_u8.shape[:2]
     m = np.asarray(masks_u8)
     if m is None or m.size == 0:
         return image_u8
 
-    # normalize to (N,H,W)
     if m.ndim == 2:
         m = m[None, ...]
     elif m.ndim == 3 and m.shape[-1] == 1:
@@ -249,18 +325,10 @@ def composite_over_by_class(
         m = np.stack([_resize_mask_nearest(mi.astype(np.uint8), H, W) for mi in m], 0)
     m = (m > 0).astype(np.uint8)
 
-    # filter active
-    if not isinstance(active, (list, tuple)) or len(active) != m.shape[0]:
-        active = [True] * m.shape[0]
-    idx = [i for i, a in enumerate(active) if a]
-    if not idx:
-        return image_u8
-    m = m[idx]
-
-    inst = stack_to_instances_binary_first(m)  # (H,W) uint16, 0=bg
+    # *** no active filtering here ***
+    inst = stack_to_instances_binary_first(m)
     out = image_u8.astype(np.float32) / 255.0
 
-    # draw each instance with its class color + white outline
     ids = np.unique(inst)
     ids = ids[ids != 0]
     for iid in ids:
@@ -270,7 +338,6 @@ def composite_over_by_class(
         a = (mm.astype(np.float32) * alpha)[..., None]
         out = out * (1 - a) + color[None, None, :] * a
 
-        # white outline
         mb = mm
         interior = (
             mb

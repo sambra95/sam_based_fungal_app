@@ -2,7 +2,7 @@ from pathlib import Path
 import numpy as np
 import streamlit as st
 from PIL import Image
-from .masks import _resize_mask_nearest
+from .mask_editing_functions import _resize_mask_nearest
 import streamlit as st
 
 
@@ -29,17 +29,15 @@ def ensure_global_state() -> None:
     st.session_state.setdefault(f"side_show_overlay", True)
 
     # Ensure each image record has the expected fields
-    for rec in ss["images"].values():
-        rec.setdefault("name", "")
-        rec.setdefault("image", None)  # np.uint8 (H,W,3)
-        rec.setdefault("H", 0)
-        rec.setdefault("W", 0)
-        rec.setdefault("masks", None)  # (N,H,W) uint8 or None
-        rec.setdefault("active", [])  # list[bool], len N
-        rec.setdefault("history", [])  # list of previous 'active'
-        rec.setdefault("boxes", [])  # list of (x0,y0,x1,y1)
-        rec.setdefault("last_click_xy", None)
-        rec.setdefault("canvas", {"closed_json": None, "processed_count": 0})
+    # for rec in ss["images"].values():
+    #     rec.setdefault("name", "")
+    #     rec.setdefault("image", None)  # np.uint8 (H,W,3)
+    #     rec.setdefault("H", 0)
+    #     rec.setdefault("W", 0)
+    #     rec.setdefault("masks", [])  # (N,H,W) uint8 or None
+    #     rec.setdefault("boxes", [])  # list of (x0,y0,x1,y1)
+    #     rec.setdefault("last_click_xy", None)
+    #     rec.setdefault("canvas", {"closed_json": None, "processed_count": 0})
 
 
 def stem(p: str) -> str:
@@ -72,9 +70,8 @@ def ensure_image(uploaded_file):
         "image": img_np,
         "H": H,
         "W": W,
-        "masks": None,
-        "active": [],
-        "history": [],
+        "masks": np.zeros((0, H, W), dtype=np.uint8),
+        "labels": [],
         "boxes": [],
         "last_click_xy": None,
         "canvas": {"closed_json": None, "processed_count": 0},
@@ -104,9 +101,8 @@ def set_masks(masks_u8: np.ndarray):
     if cur is None:
         return
     m = (masks_u8 > 0).astype(np.uint8)
-    cur["masks"] = m
-    cur["active"] = [True] * m.shape[0]
-    cur["history"] = []
+    cur["masks"].append(m)
+    cur["labels"] = [True] * m.shape[0]
 
 
 def add_drawn_mask(mask_u8: np.ndarray):
@@ -117,12 +113,8 @@ def add_drawn_mask(mask_u8: np.ndarray):
     if mask_u8.shape[:2] != (H, W):
         mask_u8 = _resize_mask_nearest(mask_u8, H, W)
     mask_u8 = (mask_u8 > 0).astype(np.uint8)[None, ...]
-    if cur["masks"] is None:
-        cur["masks"] = mask_u8
-        cur["active"] = [True]
-    else:
-        cur["masks"] = np.concatenate([cur["masks"], mask_u8], axis=0)
-        cur["active"].append(True)
+    cur["masks"] = cur["masks"].append(mask_u8)
+    cur["labels"].append(None)
 
 
 def delete_record(order_key: int):

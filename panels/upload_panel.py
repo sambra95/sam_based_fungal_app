@@ -1,12 +1,13 @@
 import streamlit as st
-from helpers.state_ops import ensure_image, ordered_keys, set_current_by_index, stem
-from helpers.image_io import load_masks_any
-from helpers.masks import _attach_masks_to_image
+from helpers.state_ops import ensure_image, ordered_keys, stem, set_current_by_index
+from helpers.upload_download_functions import load_tif_masks_for_rec
+from helpers.mask_editing_functions import append_masks_to_rec
 
 
-def render():
-    image_uploader_key = f"u_images_np_{st.session_state['image_uploader_nonce']}"
+def render_main():
+
     # ----- uploaded images -----#
+    image_uploader_key = f"u_images_np_{st.session_state['image_uploader_nonce']}"
     st.subheader("Upload images here")
     imgs = st.file_uploader(
         "Images must be uploaded before masks",
@@ -18,52 +19,39 @@ def render():
         for up in imgs:
             ensure_image(up)
         ok = ordered_keys()
-        names = [st.session_state.images[k]["name"] for k in ok]
         curk = st.session_state.current_key
-        cur_idx = ok.index(curk) if curk in ok else 0
-        sel = st.selectbox("Active image", names, index=cur_idx)
-        set_current_by_index(names.index(sel))
+        set_current_by_index(curk)
 
     # ----- uploaded masks -----#
     st.subheader("Upload masks here")
 
     # unique key per run (optional, if you already maintain a nonce)
-    uploader_key = f"u_masks_np_{st.session_state['mask_uploader_nonce']}"
+    mask_uploader_key = f"u_masks_np_{st.session_state['mask_uploader_nonce']}"
 
     up_masks_list = st.file_uploader(
         "Import masks",
-        type=["tif", "tiff", "npy", "npz"],
-        key=uploader_key,
+        type=["tif", "tiff"],
+        key=mask_uploader_key,
         disabled=not st.session_state.images,
-        accept_multiple_files=True,  # 👈 allow multiple
+        accept_multiple_files=True,
     )
 
     if up_masks_list and st.session_state.images:
-        # map image stems -> record keys once
 
+        # map image stems
         stem_to_key = {
             stem(rec["name"]): k for k, rec in st.session_state.images.items()
         }
 
-        added, skipped = 0, []
         for up_masks in up_masks_list:
             s = stem(up_masks.name)
             target_stem = s[:-5] if s.endswith("_mask") else s
             k = stem_to_key.get(target_stem)
-            if k is None:
-                skipped.append(up_masks.name)
-                continue
-
-            m = load_masks_any(up_masks)  # (N,H,W) uint8 0/1
-            rec = st.session_state.images[k]
-            _attach_masks_to_image(rec, m)  # normalize/resize + append/replace
-            st.session_state.current_key = k
-            added += m.shape[0] if m.ndim == 3 else 1
-
-        if added:
-            st.success(f"Attached {added} mask(s).")
-        if skipped:
-            st.warning("No matching image for: " + ", ".join(skipped))
+            if k is not None:  # skips mask if no corresponding image file found
+                rec = st.session_state.images[k]
+                m = load_tif_masks_for_rec(up_masks, rec)
+                append_masks_to_rec(rec, m)  # normalize/resize + append/replace
+                st.session_state.current_key = k
 
         # rotate key once so selected files don't re-attach on rerun
         st.session_state["mask_uploader_nonce"] += 1

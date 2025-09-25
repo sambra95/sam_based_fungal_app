@@ -1,7 +1,49 @@
-from pathlib import Path
-import numpy as np
+# helpers/image_io.py
 from PIL import Image
-import streamlit as st
+import io
+import numpy as np
+import tifffile as tiff
+
+
+def load_tif_masks_for_rec(upfile, rec):
+    """Return (N,H,W) uint8 {0,1} resized to rec['H'],rec['W']."""
+    H, W = rec["H"], rec["W"]
+    a = (
+        tiff.imread(io.BytesIO(upfile.read()))
+        if hasattr(upfile, "read")
+        else tiff.imread(upfile)
+    )
+    a = np.asarray(a)
+
+    # normalize to (N,H,W) binary
+    if a.ndim == 2:
+        if a.dtype != bool and np.max(a) > 1:
+            ids = np.unique(a)
+            ids = ids[ids != 0]
+            m = (
+                np.stack([(a == i).astype(np.uint8) for i in ids], 0)
+                if ids.size
+                else np.zeros((0, H, W), np.uint8)
+            )
+        else:
+            m = (a > 0).astype(np.uint8)[None, ...]
+    elif a.ndim == 3:
+        if a.shape[-1] in (1, 3):  # (H,W,1/3)
+            a = a[..., 0] if a.shape[-1] == 1 else (a.sum(-1) > 0)
+            m = (a > 0).astype(np.uint8)[None, ...]
+        else:  # (N,H,W)
+            m = (a > 0).astype(np.uint8)
+    elif a.ndim == 4:  # (N,H,W,1/3)
+        a = a[..., 0] if a.shape[-1] == 1 else (a.sum(-1) > 0)
+        m = (a > 0).astype(np.uint8)
+    else:
+        m = np.zeros((0, H, W), np.uint8)
+
+    if m.ndim == 2:
+        m = m[None, ...]
+    if m.shape[-2:] != (H, W):
+        m = np.stack([_resize_mask_nearest(mi, H, W) for mi in m], 0).astype(np.uint8)
+    return np.ascontiguousarray((m > 0).astype(np.uint8))
 
 
 def load_image(file) -> np.ndarray:
@@ -16,20 +58,6 @@ def _normalize_masks(m):
     elif m.ndim == 4:
         m = m[..., 0] if m.shape[-1] in (1, 3) else m[:, 0, ...]
     return (m > 0).astype(np.uint8)
-
-
-from pathlib import Path
-import numpy as np
-import tifffile as tiff
-import streamlit as st
-
-
-# helpers/image_io.py
-import io
-import numpy as np
-import tifffile as tiff
-
-_POSSIBLE_STACK_AXES = ((0, 1, 2), (2, 0, 1))  # try N,H,W then H,W,N
 
 
 def _as_uint8_binary(x: np.ndarray) -> np.ndarray:
