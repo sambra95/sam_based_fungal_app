@@ -4,6 +4,7 @@ import streamlit as st
 import cv2
 from cellpose import models
 from skimage.exposure import rescale_intensity
+from helpers.state_ops import current
 
 
 # --- small helper: normalization similar to your earlier pipeline ---
@@ -145,3 +146,24 @@ def segment_rec_with_cellpose(
     # overwrite masks + reset labels
     rec["masks"] = nm  # shape (N,H,W), uint8 {0,1}
     rec["labels"] = [None] * int(nm.shape[0])  # reset/realign
+
+
+def _segment_current_rec():
+    rec = current()
+    if rec is None:
+        st.warning("Upload an image first.")
+        return
+    with st.spinner("Running Cellpose…"):
+        segment_rec_with_cellpose(rec)  # overwrites rec['masks'], resets rec['labels']
+    # bump any canvas nonce you use so the UI refreshes
+    st.session_state["pred_canvas_nonce"] = (
+        st.session_state.get("pred_canvas_nonce", 0) + 1
+    )
+    st.rerun()
+
+
+def _has_cellpose_model():
+    # require both bytes and a filename
+    return bool(st.session_state.get("cellpose_model_bytes")) and bool(
+        st.session_state.get("cellpose_model_name")
+    )
