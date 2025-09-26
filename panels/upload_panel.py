@@ -9,12 +9,6 @@ import tensorflow as tf
 def render_main():
     ss = st.session_state
 
-    # ---- sensible defaults (avoid KeyErrors) ----
-    ss.setdefault("images", {})
-    ss.setdefault("current_key", None)
-    ss.setdefault("image_uploader_nonce", 0)
-    ss.setdefault("mask_uploader_nonce", 0)
-
     # ---------- Layout: 2 columns ----------
     col1, col2 = st.columns([2, 2])
 

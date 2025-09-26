@@ -14,13 +14,13 @@ from helpers.mask_editing_functions import (
     get_class_palette,
     composite_over_by_class,
 )
-
+import cv2
 from helpers.state_ops import ordered_keys, set_current_by_index, current
 
 from helpers.classifying_functions import (
     classes_map_from_labels,
     make_classifier_zip,
-    extract_masked_cell_patch_for_model,
+    extract_masked_cell_patch,
 )
 
 
@@ -100,39 +100,66 @@ def render_sidebar(*, key_ns: str = "side"):
         ),
     )
 
-    # defined elsewhere:
-    model = st.session_state["densenet_model"]
+    # # defined elsewhere:
+    # model = st.session_state["densenet_model"]
 
-    def classify_rec_with_densenet(rec: dict, size: int = 64, batch_size: int = 128):
-        M, img = rec["masks"], rec["image"]
+    # def prepare_numpy_for_model(patch: np.ndarray, target_size=(64, 64)) -> np.ndarray:
+    #     """
+    #     Input:  patch from extract_masked_cell_patch (H,W) or (H,W,C)
+    #     Output: batch with shape (1, 64, 64, 3), float32, DenseNet-preprocessed
+    #     """
+    #     arr = np.asarray(patch)
 
-        patches = []
-        for i in range(M.shape[0]):
-            p = extract_masked_cell_patch_for_model(img, M[i], size=size)
-            if p is not None:
-                patches.append(p)
+    #     # Ensure 3 channels
+    #     if arr.ndim == 2:
+    #         arr = np.repeat(arr[..., None], 3, axis=2)
+    #     elif arr.ndim == 3 and arr.shape[2] == 4:
+    #         arr = cv2.cvtColor(arr, cv2.COLOR_RGBA2RGB)
+    #     elif arr.ndim == 3 and arr.shape[2] == 3:
+    #         # Patches from OpenCV are likely BGR -> convert to RGB
+    #         arr = cv2.cvtColor(arr, cv2.COLOR_BGR2RGB)
+    #     else:
+    #         raise ValueError(f"Unexpected patch shape: {arr.shape}")
 
-        if not patches:
-            rec["labels"] = []
-            return rec
+    #     # Resize if needed
+    #     if tuple(arr.shape[:2]) != tuple(target_size):
+    #         interp = (
+    #             cv2.INTER_AREA
+    #             if max(arr.shape[:2]) > max(target_size)
+    #             else cv2.INTER_LINEAR
+    #         )
+    #         arr = cv2.resize(arr, target_size, interpolation=interp)
 
-        # Clean, contiguous batch (N, 64, 64, 3), float32
-        X = np.ascontiguousarray(np.stack(patches, axis=0, dtype=np.float32))
+    #     # Float32 + ImageNet normalization + batch dim
+    #     arr = arr.astype(np.float32)
+    #     arr = preprocess_input(arr)
+    #     batch = np.expand_dims(arr, axis=0)
+    #     return batch
 
-        # Predict in small batches to reduce memory pressure on GPU/Metal
-        ys = []
-        for i in range(0, len(X), batch_size):
-            ys.append(model.predict(X[i : i + batch_size], verbose=0))
-        y = np.concatenate(ys, axis=0)
+    # def classify_rec_with_densenet(rec: dict, size: int = 64, batch_size: int = 128):
+    #     M, img = rec["masks"], rec["image"]
 
-        rec["labels"] = y.argmax(axis=1).astype(int).tolist()
-        return rec
+    #     patches = []
+    #     patches = [
+    #         prepare_numpy_for_model(extract_masked_cell_patch(img, M[i], size=64))
+    #         for i in range(M.shape[0])
+    #     ]
 
-    st.button(
-        "Classify with Densenet121",
-        on_click=lambda: (classify_rec_with_densenet(current(), size=64), st.rerun()),
-        use_container_width=True,
-    )
+    #     if not patches:
+    #         rec["labels"] = []
+    #         return rec
+
+    #     # Predict in small batches to reduce memory pressure on GPU/Metal
+    #     preds = [model.predict(p, verbose=0)[0] for p in patches]
+
+    #     rec["labels"] = preds
+    #     return rec
+
+    # st.button(
+    #     "Classify with Densenet121",
+    #     on_click=lambda: (classify_rec_with_densenet(current(), size=64), st.rerun()),
+    #     use_container_width=True,
+    # )
 
 
 def render_main(*, key_ns: str = "edit"):
