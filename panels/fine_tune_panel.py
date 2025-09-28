@@ -5,7 +5,7 @@ from helpers.cellpose_functions import finetune_cellpose_from_records
 def render_sidebar():
 
     st.radio(
-        "Select action to perform:",
+        "Select model to fine tune:",
         ["cyto", "cyto2", "cyto3"],
         key=f"model_to_fine_tune",
         horizontal=True,
