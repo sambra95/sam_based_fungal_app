@@ -177,63 +177,50 @@ def render_main(*, key_ns: str = "edit"):
     disp_w, disp_h = int(W * scale), int(H * scale)
 
     display_img = rec["image"]
-    if (
-        st.session_state["show_overlay"]
-        and isinstance(rec.get("masks"), np.ndarray)
-        and rec["masks"].ndim == 3
-        and rec["masks"].shape[0] > 0
-    ):
-        labels = st.session_state.setdefault("all_classes", ["positive", "negative"])
-        palette = get_class_palette(labels)
-        classes_map = classes_map_from_labels(rec["masks"], rec["labels"])
+    M = rec.get("masks")
+    has_instances = isinstance(M, np.ndarray) and M.ndim == 2 and M.any()
+    if st.session_state.get("show_overlay", False) and has_instances:
+        labels_global = st.session_state.setdefault(
+            "all_classes", ["positive", "negative"]
+        )
+        palette = get_class_palette(labels_global)
+        classes_map = classes_map_from_labels(
+            M, rec.get("labels", {})
+        )  # dict {id->class/None}
         display_img = composite_over_by_class(
-            rec["image"], rec["masks"], classes_map, palette, alpha=0.35
+            rec["image"], M, classes_map, palette, alpha=0.35
         )
 
     display_for_ui = np.array(
-        Image.fromarray(display_img).resize((disp_w, disp_h), Image.BILINEAR)
+        Image.fromarray(display_img.astype(np.uint8)).resize(
+            (disp_w, disp_h), Image.BILINEAR
+        )
     )
     click = streamlit_image_coordinates(
         display_for_ui, key=f"{key_ns}_img_click", width=disp_w
     )
 
-    if (
-        click
-        and isinstance(rec.get("masks"), np.ndarray)
-        and rec["masks"].ndim == 3
-        and rec["masks"].shape[0] > 0
-    ):
+    if click and has_instances:
         x0 = int(round(int(click["x"]) / scale))
         y0 = int(round(int(click["y"]) / scale))
         if 0 <= x0 < W and 0 <= y0 < H and (x0, y0) != rec.get("last_click_xy"):
-            m = rec["masks"]
-            if m.ndim == 2:
-                m = m[None, ...]
-            m = (m > 0).astype(np.uint16)
-
-            hits = [i for i in range(m.shape[0]) if m[i, y0, x0] > 0]
-            if hits:
-                top = hits[-1]
-                cur_class = st.session_state.get("side_current_class", None)
+            iid = int(M[y0, x0])
+            if iid > 0:
+                cur_class = st.session_state.get("side_current_class")
                 if cur_class is not None:
-                    if len(rec["labels"]) < m.shape[0]:
-                        rec["labels"].extend([None] * (m.shape[0] - len(rec["labels"])))
-                    rec["labels"][top] = (
-                        None if cur_class == "Remove label" else cur_class
-                    )
+                    if cur_class == "Remove label":
+                        rec.setdefault("labels", {}).pop(iid, None)
+                    else:
+                        rec.setdefault("labels", {})[iid] = cur_class
                     rec["last_click_xy"] = (x0, y0)
                     st.rerun()
             else:
                 rec["last_click_xy"] = (x0, y0)
 
     # table of all masks with labels (default None)
-    N = (
-        rec["masks"].shape[0]
-        if isinstance(rec.get("masks"), np.ndarray) and rec["masks"].ndim == 3
-        else 0
-    )
-    rec.setdefault("labels", [])
-    if len(rec["labels"]) < N:
-        rec["labels"].extend([None] * (N - len(rec["labels"])))
-    df = pd.DataFrame({"mask_index": list(range(N)), "label": rec["labels"][:N]})
+    ids = np.unique(M) if isinstance(M, np.ndarray) and M.ndim == 2 else np.array([])
+    ids = ids[ids != 0]
+    labdict = rec.setdefault("labels", {})  # dict {id->class/None}
+    rows = [{"instance_id": int(i), "label": labdict.get(int(i))} for i in ids]
+    df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=["instance_id", "label"])
     st.dataframe(df, hide_index=True, use_container_width=True)

@@ -117,69 +117,82 @@ def _bar(df: pd.DataFrame, value_col: str):
     return f"bar_{value_col.replace(' ', '_')}.png", buf.getvalue()
 
 
-def _build_analysis_df() -> pd.DataFrame:
+def _build_analysis_df():
     rows = []
     for k in ordered_keys():
         rec = st.session_state.images[k]
-        masks = rec.get("masks")
+        inst = rec.get("masks")
+        if not isinstance(inst, np.ndarray) or inst.ndim != 2 or not inst.any():
+            continue
 
-        labs = list(rec.get("labels", []))
-
-        base = _stem(rec["name"])
-        N = masks.shape[0]
-        for i in range(N):
-            area = masks[i] > 0
-            prop = regionprops(label(masks[i]))[0]
+        labdict = rec.get("labels", {})  # dict {instance_id -> class/None}
+        for prop in regionprops(inst):  # prop.label is the instance id
+            iid = int(prop.label)
+            cls = labdict.get(iid)
             rows.append(
                 {
-                    "image": base,
-                    "mask #": i,  # use i+1 if you prefer 1-based
-                    "mask label": ("Unlabelled" if labs[i] == None else labs[i]),
-                    "mask area": int(area.sum()),
-                    "mask perimeter": prop.perimeter,
-                    "mask eccentricity": prop.eccentricity,
-                    "mask solidity": prop.eccentricity,
+                    "image": rec["name"],
+                    "mask #": iid,
+                    "mask label": (
+                        "Unlabelled" if cls in (None, "Remove label") else cls
+                    ),
+                    "mask area": float(prop.area),
+                    "mask perimeter": float(
+                        prop.perimeter
+                    ),  # or perimeter_crofton if you prefer
+                    # add any other metrics here, using `prop`
                 }
             )
     return pd.DataFrame(rows)
 
 
-def build_image_summary_df() -> pd.DataFrame:
+def build_image_summary_df():
     rows = []
+    all_classes = set()
+
     for k in ordered_keys():
         rec = st.session_state.images[k]
-        masks = rec.get("masks")
-        labs = list(rec.get("labels", []))
-        base = _stem(rec["name"])
-
-        if masks is None:
+        inst = rec.get("masks")
+        if not isinstance(inst, np.ndarray) or inst.ndim != 2:
             continue
 
-        group_counts = {}
-        total = 0
-        N = masks.shape[0]
+        ids = np.unique(inst)
+        ids = ids[ids != 0]
+        total = len(ids)
 
-        for i in range(N):
-            m = masks[i]
-            if not np.any(m):
-                continue
+        labdict = rec.get("labels", {})
+        counts = {}
+        unlabelled = 0
 
-            # Determine group label
-            raw_lab = labs[i] if i < len(labs) else None
-            group = raw_lab if (raw_lab is not None and raw_lab != "") else "Unlabelled"
+        for iid in ids:
+            cls = labdict.get(int(iid))
+            if cls is None or cls == "Remove label":
+                unlabelled += 1
+            else:
+                counts[cls] = counts.get(cls, 0) + 1
+                all_classes.add(cls)
 
-            # Count how many connected components are inside this mask
-            n_components = len(regionprops(label(m)))
-            total += n_components
-            group_counts[group] = group_counts.get(group, 0) + n_components
+        rows.append(
+            {
+                "image": rec["name"],
+                "total cells": total,
+                "unlabelled": unlabelled,
+                **counts,
+            }
+        )
 
-        # Build row: total + group counts
-        row = {"image": base, "total cells": total}
-        row.update(group_counts)
-        rows.append(row)
+    if not rows:
+        return pd.DataFrame()
 
-    # Normalize to DataFrame
-    df = pd.DataFrame(rows).fillna(0).set_index("image")
-    # Ensure integer columns
-    df = df.astype(int)
-    return df.reset_index()
+    df = pd.DataFrame(rows).fillna(0)
+    # make sure integer counts
+    for col in df.columns:
+        if col != "image":
+            df[col] = df[col].astype(int)
+
+    # ensure all class columns appear
+    for cls in sorted(all_classes):
+        if cls not in df.columns:
+            df[cls] = 0
+
+    return df

@@ -17,22 +17,14 @@ from helpers.mask_editing_functions import stack_to_instances_binary_first
 
 
 def classes_map_from_labels(masks, labels):
-    m = np.asarray(masks)
-    if m.ndim == 2:
-        m = m[None, ...]
-    if m.ndim == 3 and m.shape[-1] == 1:
-        m = m[..., 0]
-    m = (m > 0).astype(np.uint8)
-    inst = stack_to_instances_binary_first(m)  # (H,W) uint16
+    inst = np.asarray(masks)
+    if inst.ndim != 2 or inst.size == 0:
+        return {}
     classes_map = {}
-    ids = np.unique(inst)
-    ids = ids[ids != 0]
-    for iid in ids:
-        mm = inst == iid
-        # pick mask index with max overlap for this instance
-        ov = [(i, int((m[i] & mm).sum())) for i in range(m.shape[0])]
-        owner = max(ov, key=lambda t: t[1])[0]
-        cls = labels[owner] if owner < len(labels) else None
+    for iid in np.unique(inst):
+        if iid == 0:
+            continue
+        cls = labels.get(int(iid))
         if cls is not None:
             classes_map[int(iid)] = cls
     return classes_map
