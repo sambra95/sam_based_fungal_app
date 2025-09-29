@@ -62,7 +62,7 @@ def create_new_record_with_image(uploaded_file):
         "H": H,
         "W": W,
         "masks": np.zeros((H, W), dtype=np.uint16),
-        "labels": [],
+        "labels": {},
         "boxes": [],
         "last_click_xy": None,
         "canvas": {"closed_json": None, "processed_count": 0},

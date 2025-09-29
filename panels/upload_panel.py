@@ -53,11 +53,17 @@ def render_main():
                     if k is None:  # skips if no mask
                         continue
                     rec = ss.images[k]  # set the record
-                    rec["labels"] = []  # reset the mask labels
+                    rec["labels"] = {}  # reset the mask labels
                     if f.name.endswith(".npy"):
                         rec["masks"] = load_npy_mask(f, rec)
+                        rec["labels"] = {
+                            int(i): None for i in np.unique(rec["masks"]) if i != 0
+                        }
                     else:
                         rec["masks"] = load_tif_mask(f, rec)
+                        rec["labels"] = {
+                            int(i): None for i in np.unique(rec["masks"]) if i != 0
+                        }
 
         if files:
             _process_uploads(files)
@@ -150,9 +156,8 @@ def render_main():
             for k in ok:
                 rec = ss.images[k]  # sets the row record
                 masks = rec.get("masks")
-                n_labels = sum(
-                    l is not None for l in rec.get("labels", [])
-                )  # n_labels is just number of not None in list
+                n_labels = len([v for v in rec["labels"].values() if v != None])
+                # n_labels is just number of values of not None in dictionary
                 has_mask = (
                     isinstance(masks, np.ndarray) and masks.ndim == 2 and masks.any()
                 )  # check for a mask with the right format

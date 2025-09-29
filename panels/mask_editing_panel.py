@@ -126,13 +126,10 @@ def render_sidebar(*, key_ns: str = "side"):
             inst, new_id = integrate_new_mask(rec["masks"], mask)
             if new_id is not None:
                 rec["masks"] = inst
-                # keep labels list aligned: index i -> instance id i+1
-                L = rec.get("labels", [])
-                if len(L) < new_id:  # pad if needed
-                    L.extend([None] * (new_id - len(L)))
-                rec["labels"] = L
+                rec.setdefault("labels", {})[int(new_id)] = rec["labels"].get(
+                    int(new_id), None
+                )
                 added_any = True
-
         rec["boxes"] = []
         st.session_state["pred_canvas_nonce"] = (
             st.session_state.get("pred_canvas_nonce", 0) + 1
@@ -146,7 +143,7 @@ def render_sidebar(*, key_ns: str = "side"):
     # Remove all masks from the record
     if c4.button("Clear masks", use_container_width=True, key=f"{key_ns}_clear_masks"):
         rec["masks"] = np.zeros((rec["H"], rec["W"]), dtype=np.uint16)
-        rec["labels"] = []
+        rec["labels"] = {}
         rec["last_click_xy"] = None
         st.rerun()
 
@@ -155,9 +152,9 @@ def render_sidebar(*, key_ns: str = "side"):
         "Remove last mask", use_container_width=True, key=f"{key_ns}_undo_mask"
     ):
         max_id = int(rec["masks"].max())
-        rec["masks"][rec["masks"] == max_id] = 0
-
-        rec["labels"] = rec["labels"][:-1]
+        if max_id > 0:
+            rec["masks"][rec["masks"] == max_id] = 0
+            rec.setdefault("labels", {}).pop(max_id, None)
 
         st.session_state["pred_canvas_nonce"] = (
             st.session_state.get("pred_canvas_nonce", 0) + 1
@@ -263,11 +260,9 @@ def render_main(
                 inst, new_id = integrate_new_mask(rec["masks"], mask_full)
                 if new_id is not None:
                     rec["masks"] = inst
-                    # keep labels list aligned: index i -> instance id i+1
-                    L = rec.get("labels", [])
-                    if len(L) < new_id:  # pad if needed
-                        L.extend([None] * (new_id - len(L)))
-                    rec["labels"] = L
+                    rec.setdefault("labels", {})[int(new_id)] = rec["labels"].get(
+                        int(new_id), None
+                    )
                     added_any = True
 
             if added_any:
@@ -350,26 +345,24 @@ def render_main(
                         inst = inst.copy()
                         inst[inst == iid] = 0  # remove clicked instance
 
-                        # relabel to 0,1..K (contiguous)
-                        vals, inv = np.unique(
-                            inst, return_inverse=True
-                        )  # sorted unique ids incl. 0
+                        # relabel to 0,1..K (contiguous) and remap labels dict
+                        vals, inv = np.unique(inst, return_inverse=True)
                         if vals.size > 1:
                             new_vals = np.zeros_like(vals)
                             nz = vals != 0
                             new_vals[nz] = np.arange(1, nz.sum() + 1, dtype=inst.dtype)
                             inst = new_vals[inv].reshape(inst.shape)
-                            # sync labels: keep order of surviving old ids
-                            if isinstance(rec.get("labels"), list):
-                                old = rec["labels"]
-                                rec["labels"] = [
-                                    old[v - 1]
-                                    for v in vals
-                                    if v != 0 and 0 < v <= len(old)
-                                ]
+                            old_labels = rec.setdefault("labels", {})
+                            remap = {
+                                int(old): int(new)
+                                for old, new in zip(vals, new_vals)
+                                if old != 0 and new != 0
+                            }
+                            rec["labels"] = {
+                                remap[oid]: old_labels.get(oid) for oid in remap
+                            }
                         else:
-                            if isinstance(rec.get("labels"), list):
-                                rec["labels"].clear()
+                            rec["labels"] = {}
 
                         rec["masks"] = inst
                         rec["last_click_xy"] = (x, y)

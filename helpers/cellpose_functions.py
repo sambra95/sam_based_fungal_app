@@ -148,7 +148,9 @@ def segment_rec_with_cellpose(
             inst = lut[a]
 
     rec["masks"] = inst  # (H,W) integer labels
-    rec["labels"] = [None] * K  # reset/realign
+    rec["labels"] = {
+        int(i): None for i in np.unique(rec["masks"]) if i != 0
+    }  # reset/realign
 
 
 def _has_cellpose_model():

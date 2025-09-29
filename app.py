@@ -58,7 +58,6 @@ with st.sidebar:
             "Cell Metrics",
         ],
         key="side_panel",
-        horizontal=True,
     )
 
     st.divider()
