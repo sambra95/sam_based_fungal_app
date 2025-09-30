@@ -2,11 +2,12 @@ import os, tempfile, hashlib
 import numpy as np
 import streamlit as st
 import cv2
-from skimage.exposure import rescale_intensity
-from cellpose import core, io, models, train
+from cellpose import core, io, models, train, metrics
 import torch
 from PIL import Image
 import io as IO
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
 
 
 # --- small helper: normalization similar to your earlier pipeline ---
@@ -18,10 +19,7 @@ def _normalize_for_cellpose(image: np.ndarray) -> np.ndarray:
         rng = float(im.max() - im.min())
         return (im - im.min()) / rng if rng > 0 else im * 0.0
     meannorm = im * (0.5 / mean_val)
-    transformed = 1.0 / (1.0 + meannorm)
-    return rescale_intensity(transformed, in_range="image", out_range=(0, 1)).astype(
-        np.float32
-    )
+    return meannorm
 
 
 # --- materialize session model bytes to a stable temp path ---
@@ -160,38 +158,110 @@ def _has_cellpose_model():
     )
 
 
+def _plot_losses(train_losses, test_losses):
+    fig = plt.figure(figsize=(6, 3))
+    epochs = range(1, len(train_losses) + 1)
+    plt.plot(epochs, train_losses, label="train")
+
+    if test_losses is not None and len(test_losses) == len(train_losses):
+        # keep only nonzero test losses (ignore exact zeros, keep negatives)
+        test_epochs = [e for e, v in zip(epochs, test_losses) if v != 0]
+        test_vals = [v for v in test_losses if v != 0]
+        plt.plot(test_epochs, test_vals, label="test")
+
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Cellpose training and test losses during fine-tuning")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    st.pyplot(fig, use_container_width=True)
+
+
+def compare_models_mean_iou_plot(
+    images, masks, base_model_name="cyto2", channels=(0, 0)
+):
+    """
+    Compare mean IoU between base and fine-tuned Cellpose models
+    and plot a bar chart with SD error bars and individual points.
+    """
+    use_gpu = core.use_gpu()
+
+    # Base (original) model
+    base_model = models.CellposeModel(gpu=use_gpu, model_type=base_model_name)
+    base_preds, _, _ = base_model.eval(images, channels=channels)
+
+    # Fine-tuned model (from session state)
+    tuned_model = models.CellposeModel(
+        gpu=use_gpu, pretrained_model=st.session_state["cellpose_model_bytes"]
+    )
+    tuned_preds, _, _ = tuned_model.eval(images, channels=channels)
+
+    # Compute IoUs
+    base_ious = [
+        metrics.average_precision([m], [p])[0][:, 0].mean()
+        for m, p in zip(masks, base_preds)
+    ]
+    tuned_ious = [
+        metrics.average_precision([m], [p])[0][:, 0].mean()
+        for m, p in zip(masks, tuned_preds)
+    ]
+
+    # Plot
+    fig, ax = plt.subplots(figsize=(4, 4))
+    data = [base_ious, tuned_ious]
+    labels = ["Base", "Fine-tuned"]
+    means = [np.mean(d) for d in data]
+    stds = [np.std(d) for d in data]
+
+    ax.bar(labels, means, yerr=stds, capsize=5, alpha=0.7)
+    for i, vals in enumerate(data):
+        ax.scatter([labels[i]] * len(vals), vals, color="black", zorder=10)
+
+    ax.set_ylabel("Mean IoU")
+    ax.set_title("Base vs Fine-tuned Cellpose")
+    st.pyplot(fig, use_container_width=True)
+
+
 def finetune_cellpose_from_records(
     recs: dict,
 ):
 
-    images = [recs[k]["image"].astype("uint8") for k in recs.keys()]
-    images = [np.array(Image.fromarray(img).convert("L")) for img in images]
+    images = [_normalize_for_cellpose(recs[k]["image"]) for k in recs.keys()]
     masks = [recs[k]["masks"].astype("uint16") for k in recs.keys()]
+
+    train_images, test_images, train_masks, test_masks = train_test_split(
+        images, masks, test_size=0.2, random_state=42, shuffle=True
+    )
 
     use_gpu = core.use_gpu()
     channels = [0, 0]
     _ = io.logger_setup()
-    cell_model = models.CellposeModel(
-        gpu=use_gpu, model_type=st.session_state["model_to_fine_tune"]
-    )
+
+    init_model = st.session_state["model_to_fine_tune"]
+    if init_model == "scratch":
+        init_model = None
+    cell_model = models.CellposeModel(gpu=use_gpu, model_type=init_model)
 
     st.write("model loaded")
-    init_model = st.session_state["model_to_fine_tune"]
+
+    if init_model == None:
+        init_model = "scratch"
     model_name = f"{init_model}_finetuned.pt"
 
     new_path, train_losses, test_losses = train.train_seg(
         cell_model.net,
-        train_data=images,
-        train_labels=masks,
-        test_data=images,
-        test_labels=masks,
+        train_data=train_images,
+        train_labels=train_masks,
+        test_data=test_images,
+        test_labels=test_masks,
         channels=channels,
-        n_epochs=10,
-        learning_rate=0.0005,
+        n_epochs=20,
+        learning_rate=0.00005,
         weight_decay=0.1,
         SGD=True,
         nimg_per_epoch=32,
         model_name=model_name,
+        save_path=None,
     )
 
     st.write("fine tuning complete")
@@ -204,3 +274,5 @@ def finetune_cellpose_from_records(
     st.session_state["cellpose_model_name"] = model_name
 
     st.write("model saved")
+
+    return train_losses, test_losses

@@ -27,6 +27,8 @@ def ensure_global_state() -> None:
 
     # cellpose model training defaults
     ss.setdefault("cyto_to_train", "Cyto1")
+    ss.setdefault("train_losses", [])
+    ss.setdefault("test_losses", [])
 
     # UI defaults / nonces
     ss.setdefault("pred_canvas_nonce", 0)

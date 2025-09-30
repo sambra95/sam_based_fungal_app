@@ -95,7 +95,7 @@ def zip_all_masks(images: dict, keys: list[int]) -> bytes:
             tiff.imwrite(
                 b,
                 inst,
-                dtype=np.uint16,
+                # dtype=np.uint16,
                 photometric="minisblack",
                 compression="zlib",
                 metadata={"axes": "YX"},  # hint it's a 2D image

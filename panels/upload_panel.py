@@ -122,6 +122,8 @@ def render_main():
         if col_a.button("Clear Cellpose model", use_container_width=True):
             ss["cellpose_model_bytes"] = None
             ss["cellpose_model_name"] = None
+            ss["train_losses"] = []
+            ss["test_losses"] = []
         if col_b.button("Clear DenseNet-121", use_container_width=True):
             ss["densenet_ckpt_bytes"] = None
             ss["densenet_ckpt_name"] = None
