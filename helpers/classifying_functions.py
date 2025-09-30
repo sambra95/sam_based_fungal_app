@@ -15,6 +15,40 @@ from helpers.mask_editing_functions import stack_to_instances_binary_first
 
 # --- builder: fills session_state["classifier_records_df"] and ["classifier_patches"] ---
 
+# --- shared emoji + color mapping ---
+EMOJIS = ["🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "🟤", "⚫", "⚪"]
+EMOJI_HEX = {  # pick hex closest to the emoji color
+    "🔴": "#e74c3c",
+    "🟠": "#e67e22",
+    "🟡": "#f1c40f",
+    "🟢": "#2ecc71",
+    "🔵": "#3498db",
+    "🟣": "#9b59b6",
+    "🟤": "#8d6e63",
+    "⚫": "#2d3436",
+    "⚪": "#bdc3c7",
+}
+
+
+def emoji_for(name: str) -> str:
+    ss = st.session_state
+    emap = ss.setdefault("class_emojis", {})
+    if name not in emap:
+        emap[name] = EMOJIS[abs(hash(name)) % len(EMOJIS)]
+    return emap[name]
+
+
+def palette_from_emojis(class_names):
+    """Return {class_name: (r,g,b)} in 0..1 derived from class_emojis; includes '__unlabeled__'."""
+    pal = {"__unlabeled__": (1.0, 1.0, 1.0)}
+    for n in class_names:
+        if not n or n == "Remove label":
+            continue
+        e = emoji_for(n)
+        hx = EMOJI_HEX.get(e, "#95a5a6")
+        pal[n] = tuple(int(hx[i : i + 2], 16) / 255.0 for i in (1, 3, 5))
+    return pal
+
 
 def classes_map_from_labels(masks, labels):
     inst = np.asarray(masks)

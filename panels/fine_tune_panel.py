@@ -30,11 +30,27 @@ def render_sidebar():
 
 
 def render_main():
-    if len(st.session_state["train_losses"]) != 0:
-        _plot_losses(st.session_state["train_losses"], st.session_state["test_losses"])
 
-        images = [rec["image"] for rec in st.session_state["images"].values()]
-        masks = [rec["masks"] for rec in st.session_state["images"].values()]
-        compare_models_mean_iou_plot(
-            images, masks, base_model_name=st.session_state["model_to_fine_tune"]
-        )
+    if st.button(
+        "Display training results.",
+        key="analyze_fine_tuning",
+        use_container_width=True,
+    ):
+        if len(st.session_state["train_losses"]) != 0:
+
+            with st.spinner("Running inference and plotting…"):
+
+                _plot_losses(
+                    st.session_state["train_losses"], st.session_state["test_losses"]
+                )
+
+                images = [rec["image"] for rec in st.session_state["images"].values()]
+                masks = [rec["masks"] for rec in st.session_state["images"].values()]
+                compare_models_mean_iou_plot(
+                    images,
+                    masks,
+                    base_model_name=st.session_state["model_to_fine_tune"],
+                )
+
+        else:
+            st.info("Model not fine tuned yet")
