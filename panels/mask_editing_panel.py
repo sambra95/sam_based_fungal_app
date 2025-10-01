@@ -20,7 +20,7 @@ from helpers.mask_editing_functions import (
     get_class_palette,
     integrate_new_mask,
 )
-from helpers.classifying_functions import classes_map_from_labels
+from helpers.classifying_functions import classes_map_from_labels, palette_from_emojis
 
 
 def render_sidebar(*, key_ns: str = "side"):
@@ -201,7 +201,7 @@ def render_main(
     disp_w, disp_h = int(rec["W"] * scale), int(rec["H"] * scale)
 
     labels = st.session_state.setdefault("all_classes", ["Remove label"])
-    palette = get_class_palette(labels)
+    palette = palette_from_emojis(labels)
     classes_map = classes_map_from_labels(rec["masks"], rec["labels"])
     display_img = composite_over_by_class(
         rec["image"], rec["masks"], classes_map, palette, alpha=0.35

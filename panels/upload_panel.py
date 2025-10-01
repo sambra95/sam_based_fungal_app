@@ -93,12 +93,11 @@ def render_main():
             "Upload DenseNet-121 checkpoint",
             type=[
                 "keras",
-                "h5",
             ],  # Keras formats only; torch files won't work with load_model
             key="upload_densenet_ckpt",
         )
         if densenet_file is not None:
-            from tensorflowimport import load_model, Model
+            from tensorflow.keras.models import load_model, Model
 
             data = densenet_file.read()
             ext = os.path.splitext(densenet_file.name)[1].lower() or ".keras"

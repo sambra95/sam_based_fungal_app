@@ -325,7 +325,6 @@ def stack_to_instances_binary_first(m: np.ndarray) -> np.ndarray:
 
 def get_class_palette(labels, *, ss_key="class_colors"):
     """Persistent {class -> RGB float tuple} in session_state."""
-    import streamlit as st
 
     base = [
         (0.90, 0.10, 0.10),

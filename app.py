@@ -40,6 +40,23 @@ st.set_page_config(page_title="Mask Toggle", layout="wide")
 ensure_global_state()
 
 # ============================================================
+# -------------------- Force TF to CPU -----------------------
+# ============================================================
+
+# Mixing frameworks on the same accelerator (CUDA/MPS) often OOMs or hard-crashes.
+# Already using Torch (SAM2/Cellpose).
+# When DenseNet spins up, TF will try to grab the accelerator too. Causing a crash
+
+import tensorflow as tf
+
+try:
+    tf.config.set_visible_devices([], "GPU")  # disable all GPUs for TF
+except Exception:
+    pass
+tf.config.threading.set_intra_op_parallelism_threads(1)
+tf.config.threading.set_inter_op_parallelism_threads(1)
+
+# ============================================================
 # ---------------------------- Sidebar -----------------------
 # ============================================================
 
