@@ -28,7 +28,8 @@ from panels import (
     mask_editing_panel,
     classify_cells_panel,
     cell_metrics_panel,
-    fine_tune_panel,
+    # fine_tune_panel,
+    train_densenet_panel,
 )
 
 st.set_page_config(page_title="Mask Toggle", layout="wide")
@@ -93,8 +94,8 @@ with st.sidebar:
 
     elif panel == "Fine Tune Models":
 
-        fine_tune_panel.render_sidebar()
-
+        # fine_tune_panel.render_sidebar()
+        None
 
 # ============================================================
 # --------------------------- Main area ----------------------
@@ -119,4 +120,6 @@ elif panel == "Cell Metrics":
 
 elif panel == "Fine Tune Models":
 
-    fine_tune_panel.render_main()
+    # fine_tune_panel.render_main()
+    train_densenet_panel.render_cellpose_train_panel()
+    train_densenet_panel.render_train_panel()
