@@ -6,6 +6,51 @@ import tifffile as tiff
 import streamlit as st
 from zipfile import ZipFile
 from pathlib import Path
+import streamlit as st
+
+from helpers.state_ops import (
+    ordered_keys,
+    stem,
+    set_current_by_index,
+)
+
+ss = st.session_state
+
+
+def _process_uploads(files, rec, mask_suffix):
+    if not files:
+        return
+    # load the images first
+    mask_suffix_len = len(mask_suffix)
+    imgs = [f for f in files if not stem(f.name).endswith(mask_suffix)]
+    for f in imgs:
+        create_new_record_with_image(f)
+    ok = ordered_keys()
+    if ok:
+        set_current_by_index(len(ok) - 1)
+
+    # then loads the masks (require prior image; match by stem without '_mask')
+    masks = [f for f in files if stem(f.name).endswith(mask_suffix)]
+    if masks and ss.images:
+        stem_to_key = {stem(rec["name"]): k for k, rec in ss.images.items()}
+        for f in masks:
+
+            base = stem(f.name)[:-mask_suffix_len]
+            k = stem_to_key.get(base)  # get the ID key
+            if k is None:  # skips if no mask
+                continue
+            rec = ss.images[k]  # set the record
+            rec["labels"] = {}  # reset the mask labels
+            if f.name.endswith(".npy"):
+                rec["masks"] = load_npy_mask(f, rec)
+                rec["labels"] = {
+                    int(i): None for i in np.unique(rec["masks"]) if i != 0
+                }
+            else:
+                rec["masks"] = load_tif_mask(f, rec)
+                rec["labels"] = {
+                    int(i): None for i in np.unique(rec["masks"]) if i != 0
+                }
 
 
 def load_npy_mask(file, rec):

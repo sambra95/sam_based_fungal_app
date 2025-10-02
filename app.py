@@ -1,17 +1,4 @@
-import io
-from contextlib import nullcontext
-from pathlib import Path
-from zipfile import ZipFile
-
-import numpy as np
 import streamlit as st
-from PIL import Image
-from streamlit_drawable_canvas import st_canvas
-from streamlit_image_coordinates import streamlit_image_coordinates
-import tifffile as tiff
-import torch
-from sam2.build_sam import build_sam2
-from sam2.sam2_image_predictor import SAM2ImagePredictor
 
 # --- import helpers ---
 
@@ -23,13 +10,13 @@ from helpers.state_ops import (
 # ---------- Import App Panels --------
 # ============================================================
 
-from panels import (
-    upload_panel,
-    mask_editing_panel,
-    classify_cells_panel,
-    cell_metrics_panel,
-    fine_tune_panel,
-)
+# from panels import (
+#     upload_panel,
+#     mask_editing_panel,
+#     classify_cells_panel,
+#     cell_metrics_panel,
+#     fine_tune_panel,
+# )
 
 st.set_page_config(page_title="Mask Toggle", layout="wide")
 
@@ -47,14 +34,21 @@ ensure_global_state()
 # Already using Torch (SAM2/Cellpose).
 # When DenseNet spins up, TF will try to grab the accelerator too. Causing a crash
 
-import tensorflow as tf
 
-try:
-    tf.config.set_visible_devices([], "GPU")  # disable all GPUs for TF
-except Exception:
-    pass
-tf.config.threading.set_intra_op_parallelism_threads(1)
-tf.config.threading.set_inter_op_parallelism_threads(1)
+@st.cache_resource(show_spinner=False)
+def configure_tf_cpu_only():
+    import tensorflow as tf
+
+    try:
+        tf.config.set_visible_devices([], "GPU")
+    except Exception:
+        pass
+    tf.config.threading.set_intra_op_parallelism_threads(1)
+    tf.config.threading.set_inter_op_parallelism_threads(1)
+    return True
+
+
+configure_tf_cpu_only()
 
 # ============================================================
 # ---------------------------- Sidebar -----------------------
@@ -82,18 +76,21 @@ with st.sidebar:
     # -------- Create & Edit (combined) --------
 
     if panel == "Create and Edit Masks":
+        from panels import mask_editing_panel
+
         mask_editing_panel.render_sidebar(key_ns="side")
 
     elif panel == "Classify Cells":
+        from panels import classify_cells_panel
+
         classify_cells_panel.render_sidebar(key_ns="side")
 
     elif panel == "Cell Metrics":
+        from panels import cell_metrics_panel
 
         cell_metrics_panel.render_sidebar()
 
     elif panel == "Fine Tune Models":
-
-        # fine_tune_panel.render_sidebar()
         None
 
 # ============================================================
@@ -102,22 +99,27 @@ with st.sidebar:
 
 # -------- Upload panel --------
 if panel == "Upload data":
+    from panels import upload_panel
 
     upload_panel.render_main()
 
 elif panel == "Create and Edit Masks":
+    from panels import mask_editing_panel
 
     mask_editing_panel.render_main(key_ns="edit")
 
 elif panel == "Classify Cells":
+    from panels import classify_cells_panel
 
     classify_cells_panel.render_main(key_ns="classify")
 
 elif panel == "Cell Metrics":
+    from panels import cell_metrics_panel
 
     cell_metrics_panel.render_main()
 
 elif panel == "Fine Tune Models":
+    from panels import fine_tune_panel
 
     fine_tune_panel.render_cellpose_train_panel()
     fine_tune_panel.render_densenet_train_panel()
