@@ -1,0 +1,18 @@
+numpy
+pandas
+cellpose==3.1.1.2 
+opencv-python
+opencv-contrib-python
+matplotlib
+Pillow
+scikit-image~=0.25
+streamlit
+tensorflow
+keras==3.10 # 3.11 does not work, which might be a bit restrictive
+torch>=2.5.1
+torchvision>=0.20.1
+seaborn
+sam2
+streamlit-drawable-canvas
+streamlit-image-coordinates
+tifffile
