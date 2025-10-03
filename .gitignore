@@ -10,6 +10,7 @@ secret.txt
 *.tif
 *.yaml
 *.npy
+.DS_Store
 
 # Ignore compiled Python files
 __pycache__/
