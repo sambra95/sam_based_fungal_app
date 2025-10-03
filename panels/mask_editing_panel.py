@@ -214,7 +214,7 @@ def render_main(
     )
 
     # ensure nonces exist locally to avoid KeyErrors when called from this module
-
+    # ? Where is this set interactively? which widget has that key?
     if st.session_state["side_interaction_mode"] == "Draw mask":
         bg = Image.fromarray(display_for_ui).convert("RGBA")
 
