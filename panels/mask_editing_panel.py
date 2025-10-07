@@ -89,15 +89,10 @@ def nav_fragment(key_ns="side"):
 @st.fragment
 def interaction_mode_fragment(ns="side"):
     # set a default BEFORE the widget is created
-    st.session_state.setdefault(f"{ns}_interaction_mode", "Draw box")
+    st.session_state.setdefault(f"{ns}_interaction_mode", "Remove mask")
 
-    mode = st.radio(
-        "Select action to perform:",
-        ["Draw box", "Remove box", "Draw mask", "Remove mask"],
-        key=f"{ns}_interaction_mode",
-        horizontal=True,
-    )
-    st.caption(f"Mode: {mode}")
+    mode = st.session_state[f"{ns}_interaction_mode"]
+    st.caption(f"Current click action: {mode}")
 
 
 # ---------- Sidebar: Cellpose actions ----------

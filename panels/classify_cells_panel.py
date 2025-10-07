@@ -76,8 +76,10 @@ def nav_fragment(key_ns="side"):
     c1, c2 = st.columns(2)
     if c1.button("◀ Prev", key=f"{key_ns}_prev", use_container_width=True):
         set_current_by_index(i - 1)
+        st.rerun()
     if c2.button("Next ▶", key=f"{key_ns}_next", use_container_width=True):
         set_current_by_index(i + 1)
+        st.rerun()
 
     st.toggle("Show mask overlay", key="show_overlay")
 
