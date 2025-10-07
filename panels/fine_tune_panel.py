@@ -2,11 +2,16 @@
 import numpy as np
 import pandas as pd
 import streamlit as st
-from PIL import Image  # (only if your helpers rely on PIL types somewhere)
+
+# from PIL import Image  # (only if your helpers rely on PIL types somewhere)
 from sklearn.model_selection import train_test_split
 from sklearn.utils.class_weight import compute_class_weight
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score
 from tensorflow.keras.callbacks import EarlyStopping
+import itertools
+from cellpose import models, metrics, core
+import torch
+import io as IO
 
 # ---- app helpers ----
 from helpers.state_ops import ordered_keys
@@ -249,6 +254,42 @@ def _cellpose_options(key_ns="train_cellpose"):
 
         ss["cp_nimg"] = st.slider("Images per epoch", 1, 128, int(ss["cp_nimg"]), 1)
 
+    # --- Hyperparameter tuning toggle + grid inputs ---
+    ss.setdefault("cp_do_gridsearch", False)
+    ss["cp_do_gridsearch"] = st.checkbox(
+        "Run hyperparameter tuning (grid search)",
+        value=bool(ss["cp_do_gridsearch"]),
+    )
+
+    if ss["cp_do_gridsearch"]:
+        with st.expander("Grid search options", expanded=True):
+            st.caption("Provide comma-separated lists. Leave blank to use defaults.")
+
+            # Defaults for the grid
+            ss.setdefault("cp_grid_cellprob", "0.2, 0.0, -0.2")
+            ss.setdefault("cp_grid_flow", "0.3, 0.4, 0.6")
+            ss.setdefault("cp_grid_niter", "1000")
+            ss.setdefault("cp_grid_min_size", "0, 100")
+
+            ss["cp_grid_cellprob"] = st.text_input(
+                "cellprob_threshold values",
+                ss["cp_grid_cellprob"],
+                help="Examples: 0.2, 0.0, -0.2",
+            )
+            ss["cp_grid_flow"] = st.text_input(
+                "flow_threshold values",
+                ss["cp_grid_flow"],
+                help="Examples: 0.3, 0.4, 0.6",
+            )
+            ss["cp_grid_niter"] = st.text_input(
+                "niter values", ss["cp_grid_niter"], help="Examples: 500, 1000"
+            )
+            ss["cp_grid_min_size"] = st.text_input(
+                "min_size values",
+                ss["cp_grid_min_size"],
+                help="Examples: 0, 100, 200",
+            )
+
     return True
 
 
@@ -281,18 +322,140 @@ def cellpose_train_fragment():
 
     _plot_losses(train_losses, test_losses)
 
+    # ----- Prepare a (possibly subsampled) evaluation set -----
     masks = [rec["masks"] for rec in recs.values()]
     images = [rec["image"] for rec in recs.values()]
     N = len(images)
-    sample_n = min(50, N)  # only calculate the data for up to 50 image-mask pairs
+    sample_n = min(50, N)
     if N > sample_n:
-        rng = (
-            np.random.default_rng()
-        )  # or np.random.default_rng(ss.get("cp_plot_seed"))
+        rng = np.random.default_rng()
         idx = rng.choice(N, size=sample_n, replace=False)
         images = [images[i] for i in idx]
         masks = [masks[i] for i in idx]
 
+    # ----- OPTIONAL: Hyperparameter grid search -----
+    if ss.get("cp_do_gridsearch", False):
+        st.subheader("Hyperparameter tuning (grid search)")
+
+        # Parse user grid text inputs into lists
+        def _parse_float_list(s, default):
+            s = (s or "").strip()
+            if not s:
+                return default
+            try:
+                return [float(x.strip()) for x in s.split(",")]
+            except Exception:
+                return default
+
+        def _parse_int_list(s, default):
+            s = (s or "").strip()
+            if not s:
+                return default
+            try:
+                return [int(float(x.strip())) for x in s.split(",")]
+            except Exception:
+                return default
+
+        grid_cellprob = _parse_float_list(
+            ss.get("cp_grid_cellprob", "0.2, 0.0, -0.2"), [0.2, 0.0, -0.2]
+        )
+        grid_flow = _parse_float_list(
+            ss.get("cp_grid_flow", "0.3, 0.4, 0.6"), [0.3, 0.4, 0.6]
+        )
+        grid_niter = _parse_int_list(ss.get("cp_grid_niter", "1000"), [1000])
+        grid_min_size = _parse_int_list(ss.get("cp_grid_min_size", "0, 100"), [0, 100])
+
+        # Build combinations
+        combos = list(
+            itertools.product(grid_cellprob, grid_flow, grid_niter, grid_min_size)
+        )
+        total = len(combos)
+        if total == 0:
+            st.warning("No valid grid combinations. Skipping tuning.")
+        else:
+            # Get channels from session (fallback 0,0)
+            ch1 = int(st.session_state.get("cp_ch1", 0))
+            ch2 = int(st.session_state.get("cp_ch2", 0))
+            channels = [ch1, ch2]
+
+            # Load the in-memory fine-tuned model from session state
+            # Expecting bytes saved somewhere like "cellpose_model_bytes"
+            use_gpu = core.use_gpu()
+            eval_model = models.CellposeModel(
+                gpu=use_gpu,
+                model_type=base_model if base_model != "scratch" else "cyto2",
+            )
+            ft_bytes = st.session_state.get("cellpose_model_bytes")
+            if ft_bytes:
+                try:
+                    sd = torch.load(IO.BytesIO(ft_bytes), map_location="cpu")
+                    eval_model.net.load_state_dict(sd)
+                except Exception as e:
+                    st.error(f"Failed to load fine-tuned weights from session: {e}")
+
+            results = []
+            pb = st.progress(0.0, text="Starting grid search…")
+            for i, (cellprob, flowthresh, niter, min_size) in enumerate(combos, 1):
+                pb.progress(
+                    i / total,
+                    text=f"Evaluating {i}/{total} (cp={cellprob}, flow={flowthresh}, niter={niter}, min={min_size})",
+                )
+                try:
+                    masks_pred, flows, styles = eval_model.eval(
+                        list(images),
+                        channels=list(channels),
+                        diameter=None,
+                        cellprob_threshold=cellprob,
+                        flow_threshold=flowthresh,
+                        niter=niter,
+                        min_size=min_size,
+                    )
+                    ap = metrics.average_precision(masks, masks_pred)[
+                        0
+                    ]  # AP per-image matrix
+                    score = float(np.nanmean(ap[:, 0]))  # mean AP at IoU=0.5
+                except Exception as e:
+                    st.warning(
+                        f"Evaluation error for cp={cellprob}, flow={flowthresh}, niter={niter}, min={min_size}: {e}"
+                    )
+                    score = float("nan")
+
+                results.append(
+                    {
+                        "cellprob": cellprob,
+                        "flow_threshold": flowthresh,
+                        "niter": niter,
+                        "min_size": min_size,
+                        "ap_iou_0.5": score,
+                    }
+                )
+
+            pb.empty()
+
+            # Store + show results (no CSV write)
+            df = pd.DataFrame(results).sort_values(
+                by="ap_iou_0.5", ascending=False, na_position="last"
+            )
+            st.session_state["cp_grid_results_df"] = df
+            st.dataframe(df, use_container_width=True)
+
+            # Pick best and push into session state used by the mask editing panel
+            if not df.empty and np.isfinite(df["ap_iou_0.5"].iloc[0]):
+                best = df.iloc[0]
+                ss["cp_cellprob_threshold"] = float(best["cellprob"])
+                ss["cp_flow_threshold"] = float(best["flow_threshold"])
+                ss["cp_min_size"] = int(best["min_size"])
+                ss["cp_niter"] = int(
+                    best["niter"]
+                )  # not used in segment_rec_with_cellpose, but we keep it
+                st.success(
+                    f"Best hyperparameters set: cellprob={best['cellprob']}, "
+                    f"flow={best['flow_threshold']}, min_size={int(best['min_size'])}, niter={int(best['niter'])}"
+                )
+            else:
+                st.info("No valid result to set best hyperparameters.")
+
+    # ----- Plot model comparison afterwards (unchanged) -----
     compare_models_mean_iou_plot(
         images,
         masks,
