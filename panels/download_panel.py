@@ -13,6 +13,11 @@ from helpers.upload_download_functions import (
 
 
 def render_main():
+
+    if not ordered_keys():
+        st.info("Upload data and label masks first.")
+        return False
+
     st.markdown("## Downloads")
 
     images = st.session_state.get("images", {})

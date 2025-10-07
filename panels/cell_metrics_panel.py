@@ -1,17 +1,18 @@
 # panels/cell_metrics_panel.py
 import streamlit as st
-import io
-from zipfile import ZipFile
 
+from helpers.upload_download_functions import ordered_keys
 from helpers.cell_metrics_functions import (
     _build_analysis_df,
-    build_image_summary_df,
     _violin,
     _bar,
 )
 
 
 def render_sidebar():
+
+    if not ordered_keys():
+        return False
 
     st.select_slider(
         "Plot type",
@@ -57,6 +58,10 @@ def render_sidebar():
 
 
 def render_main():
+
+    if not ordered_keys():
+        st.info("Upload data and label masks first.")
+        return False
 
     df = _build_analysis_df()
 
