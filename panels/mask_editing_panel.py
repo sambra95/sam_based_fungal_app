@@ -5,7 +5,7 @@ from PIL import Image
 from streamlit_drawable_canvas import st_canvas
 from streamlit_image_coordinates import streamlit_image_coordinates
 
-from helpers.cellpose_functions import _has_cellpose_model
+from helpers.cellpose_functions import _has_cellpose_model, segment_rec_with_cellpose
 from helpers.state_ops import ordered_keys, set_current_by_index, current
 from helpers.mask_editing_functions import (
     _run_sam2_on_boxes,
@@ -59,6 +59,7 @@ def _image_display(rec, scale):
 # ---------- Sidebar: navigation ----------
 
 
+# @st.fragment
 def nav_fragment(key_ns="side"):
     ok = ordered_keys()
     if not ok:
@@ -74,10 +75,10 @@ def nav_fragment(key_ns="side"):
     c1, c2 = st.columns(2)
     if c1.button("◀ Prev", key=f"{key_ns}_prev", use_container_width=True):
         set_current_by_index(rec_idx - 1)
-        st.rerun()
+        # st.rerun()
     if c2.button("Next ▶", key=f"{key_ns}_next", use_container_width=True):
         set_current_by_index(rec_idx + 1)
-        st.rerun()
+        # st.rerun()
 
     st.toggle("Show mask overlay", key="show_overlay", value=True)
 
@@ -88,45 +89,27 @@ def nav_fragment(key_ns="side"):
 @st.fragment
 def interaction_mode_fragment(ns="side"):
     # set a default BEFORE the widget is created
-    st.session_state.setdefault(f"{ns}_interaction_mode", "Remove mask")
-    mode = st.session_state[f"{ns}_interaction_mode"]
-    st.caption(f"Current mouse action: {mode}")
+    st.session_state.setdefault(f"{ns}_interaction_mode", "Draw box")
+
+    mode = st.radio(
+        "Select action to perform:",
+        ["Draw box", "Remove box", "Draw mask", "Remove mask"],
+        key=f"{ns}_interaction_mode",
+        horizontal=True,
+    )
+    st.caption(f"Mode: {mode}")
 
 
 # ---------- Sidebar: Cellpose actions ----------
 
 
+import streamlit as st
+
+
 @st.fragment
 def cellpose_actions_fragment():
     # --- Hyperparameters (collapsible) ---
-    with st.expander("Predict masks with Cellpose", expanded=False):
-
-        # --- Action buttons ---
-        st.button(
-            "Segment current image with Cellpose",
-            key="btn_segment_cellpose",
-            disabled=not _has_cellpose_model(),
-            use_container_width=True,
-            help=(
-                "Warning: this action will reset current mask labels."
-                if _has_cellpose_model()
-                else "Upload model"
-            ),
-            on_click=_segment_current_and_refresh,
-        )
-
-        st.button(
-            "Batch segment all images with Cellpose",
-            key="btn_batch_segment_cellpose",
-            disabled=not _has_cellpose_model(),
-            use_container_width=True,
-            help=(
-                "Warning: this action will reset current mask labels."
-                if _has_cellpose_model()
-                else "Upload model"
-            ),
-            on_click=_batch_segment_and_refresh,
-        )
+    with st.expander("Cellpose hyperparameters", expanded=False):
         # We use a small form so changing values doesn't trigger reruns mid-typing
         with st.form("cellpose_hparams_form", clear_on_submit=False):
             # Channels (two ints)
