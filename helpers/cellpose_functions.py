@@ -212,6 +212,12 @@ def _has_cellpose_model():
     )
 
 
+def _save_fig_to_session(fig, key_prefix: str, dpi: int = 200):
+    buf = IO.BytesIO()
+    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
+    st.session_state[f"{key_prefix}_png"] = buf.getvalue()
+
+
 def _plot_losses(train_losses, test_losses):
     fig = plt.figure(figsize=(6, 3))
     epochs = range(1, len(train_losses) + 1)
@@ -228,7 +234,14 @@ def _plot_losses(train_losses, test_losses):
     plt.title("Cellpose training and test losses during fine-tuning")
     plt.legend()
     plt.grid(True, alpha=0.3)
+
+    # Render first
     st.pyplot(fig, use_container_width=True)
+
+    # 🔸 Save to session state for later download/use
+    _save_fig_to_session(fig, key_prefix="cp_losses", dpi=300)
+
+    plt.close(fig)
 
 
 from sklearn.metrics import r2_score, mean_absolute_error
@@ -316,7 +329,7 @@ def compare_models_mean_iou_plot(
     ax1.set_ylim(-0.5, lim + 0.5)
     ax1.grid(alpha=0.3)
 
-    ### NEW: Compute R² and MAE for base model
+    # R² & MAE (base)
     if len(gt_counts) > 1:
         r2_base = r2_score(gt_counts, base_counts)
         mae_base = mean_absolute_error(gt_counts, base_counts)
@@ -347,7 +360,7 @@ def compare_models_mean_iou_plot(
     ax2.set_ylim(-0.5, lim + 0.5)
     ax2.grid(alpha=0.3)
 
-    ### NEW: Compute R² and MAE for tuned model
+    # R² & MAE (tuned)
     if len(gt_counts) > 1:
         r2_tuned = r2_score(gt_counts, tuned_counts)
         mae_tuned = mean_absolute_error(gt_counts, tuned_counts)
@@ -364,5 +377,11 @@ def compare_models_mean_iou_plot(
 
     fig.suptitle("Original vs Fine-tuned Model Comparison", fontsize=13)
     plt.tight_layout()
+
+    # Render first
     st.pyplot(fig, use_container_width=True)
+
+    # 🔸 Save to session state for later download/use
+    _save_fig_to_session(fig, key_prefix="cp_compare_iou", dpi=300)
+
     plt.close(fig)

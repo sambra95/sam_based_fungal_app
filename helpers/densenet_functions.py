@@ -16,6 +16,7 @@ from tensorflow.keras.optimizers import Adam
 # ---- bring in existing app helpers ----
 from helpers.state_ops import ordered_keys
 from helpers.classifying_functions import extract_masked_cell_patch
+from helpers.cellpose_functions import _save_fig_to_session
 
 ss = st.session_state
 
@@ -462,6 +463,9 @@ def _plot_confusion_matrix(
 
     ax.grid(False)
     fig.tight_layout()
+
+    _save_fig_to_session(fig, key_prefix=f"densenet_plot_confusion", dpi=300)
+
     return fig
 
 
@@ -508,5 +512,6 @@ def _plot_densenet_losses(train_losses, test_losses, metrics=None):
     else:
         ax2.axis("off")
 
-    plt.tight_layout()
-    st.pyplot(fig, use_container_width=True)
+    # 🔸 Save PNG to session_state
+    _save_fig_to_session(fig, key_prefix=f"densenet_plot_losses", dpi=300)
+    plt.close(fig)
