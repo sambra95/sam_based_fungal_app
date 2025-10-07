@@ -5,7 +5,7 @@ from PIL import Image
 from streamlit_drawable_canvas import st_canvas
 from streamlit_image_coordinates import streamlit_image_coordinates
 
-from helpers.cellpose_functions import _has_cellpose_model, segment_rec_with_cellpose
+from helpers.cellpose_functions import _has_cellpose_model
 from helpers.state_ops import ordered_keys, set_current_by_index, current
 from helpers.mask_editing_functions import (
     _run_sam2_on_boxes,
@@ -15,6 +15,9 @@ from helpers.mask_editing_functions import (
     polygon_to_mask,
     composite_over_by_class,
     integrate_new_mask,
+    _segment_current_and_refresh,
+    _batch_segment_and_refresh,
+    _reset_cellpose_hparams_to_defaults,
 )
 from helpers.classifying_functions import classes_map_from_labels, palette_from_emojis
 
@@ -56,7 +59,6 @@ def _image_display(rec, scale):
 # ---------- Sidebar: navigation ----------
 
 
-# @st.fragment
 def nav_fragment(key_ns="side"):
     ok = ordered_keys()
     if not ok:
@@ -72,10 +74,10 @@ def nav_fragment(key_ns="side"):
     c1, c2 = st.columns(2)
     if c1.button("◀ Prev", key=f"{key_ns}_prev", use_container_width=True):
         set_current_by_index(rec_idx - 1)
-        # st.rerun()
+        st.rerun()
     if c2.button("Next ▶", key=f"{key_ns}_next", use_container_width=True):
         set_current_by_index(rec_idx + 1)
-        # st.rerun()
+        st.rerun()
 
     st.toggle("Show mask overlay", key="show_overlay", value=True)
 
@@ -86,27 +88,45 @@ def nav_fragment(key_ns="side"):
 @st.fragment
 def interaction_mode_fragment(ns="side"):
     # set a default BEFORE the widget is created
-    st.session_state.setdefault(f"{ns}_interaction_mode", "Draw box")
-
-    mode = st.radio(
-        "Select action to perform:",
-        ["Draw box", "Remove box", "Draw mask", "Remove mask"],
-        key=f"{ns}_interaction_mode",
-        horizontal=True,
-    )
-    st.caption(f"Mode: {mode}")
+    st.session_state.setdefault(f"{ns}_interaction_mode", "Remove mask")
+    mode = st.session_state[f"{ns}_interaction_mode"]
+    st.caption(f"Current mouse action: {mode}")
 
 
 # ---------- Sidebar: Cellpose actions ----------
 
 
-import streamlit as st
-
-
 @st.fragment
 def cellpose_actions_fragment():
     # --- Hyperparameters (collapsible) ---
-    with st.expander("Cellpose hyperparameters", expanded=False):
+    with st.expander("Predict masks with Cellpose", expanded=False):
+
+        # --- Action buttons ---
+        st.button(
+            "Segment current image with Cellpose",
+            key="btn_segment_cellpose",
+            disabled=not _has_cellpose_model(),
+            use_container_width=True,
+            help=(
+                "Warning: this action will reset current mask labels."
+                if _has_cellpose_model()
+                else "Upload model"
+            ),
+            on_click=_segment_current_and_refresh,
+        )
+
+        st.button(
+            "Batch segment all images with Cellpose",
+            key="btn_batch_segment_cellpose",
+            disabled=not _has_cellpose_model(),
+            use_container_width=True,
+            help=(
+                "Warning: this action will reset current mask labels."
+                if _has_cellpose_model()
+                else "Upload model"
+            ),
+            on_click=_batch_segment_and_refresh,
+        )
         # We use a small form so changing values doesn't trigger reruns mid-typing
         with st.form("cellpose_hparams_form", clear_on_submit=False):
             # Channels (two ints)
@@ -185,88 +205,6 @@ def cellpose_actions_fragment():
         if st.session_state.get("cp_diam_mode", "Auto (None)") == "Auto (None)":
             st.session_state["cp_diameter"] = None
 
-    # --- Action buttons ---
-    st.button(
-        "Segment current image with Cellpose",
-        key="btn_segment_cellpose",
-        disabled=not _has_cellpose_model(),
-        use_container_width=True,
-        help=(
-            "Warning: this action will reset current mask labels."
-            if _has_cellpose_model()
-            else "Upload model"
-        ),
-        on_click=_segment_current_and_refresh,
-    )
-
-    st.button(
-        "Batch segment all images with Cellpose",
-        key="btn_batch_segment_cellpose",
-        disabled=not _has_cellpose_model(),
-        use_container_width=True,
-        help=(
-            "Warning: this action will reset current mask labels."
-            if _has_cellpose_model()
-            else "Upload model"
-        ),
-        on_click=_batch_segment_and_refresh,
-    )
-
-
-def _reset_cellpose_hparams_to_defaults():
-    st.session_state["cp_ch1"] = 0
-    st.session_state["cp_ch2"] = 0
-    st.session_state["cp_diam_mode"] = "Auto (None)"
-    st.session_state["cp_diameter"] = None
-    st.session_state["cp_cellprob_threshold"] = -0.2
-    st.session_state["cp_flow_threshold"] = 0.4
-    st.session_state["cp_min_size"] = 0
-    st.session_state["cp_do_normalize"] = True
-    st.toast("Cellpose hyperparameters reset to defaults")
-
-
-def _segment_current_and_refresh():
-    rec = current()
-    if rec is not None:
-        params = _read_cellpose_hparams_from_state()
-        segment_rec_with_cellpose(rec, **params)
-        st.session_state["edit_canvas_nonce"] += 1
-    st.rerun()
-
-
-def _batch_segment_and_refresh():
-    ok = ordered_keys()
-    if not ok:
-        return
-    params = _read_cellpose_hparams_from_state()
-    n = len(ok)
-    pb = st.progress(0.0, text="Starting…")
-    for i, k in enumerate(ok, 1):
-        segment_rec_with_cellpose(st.session_state.images.get(k), **params)
-        pb.progress(i / n, text=f"Segmented {i}/{n}")
-    pb.empty()
-    st.session_state["edit_canvas_nonce"] += 1
-    st.rerun()
-
-
-def _read_cellpose_hparams_from_state():
-    # Build kwargs matching segment_rec_with_cellpose signature
-    ch1 = int(st.session_state.get("cp_ch1", 0))
-    ch2 = int(st.session_state.get("cp_ch2", 0))
-    diameter = st.session_state.get("cp_diameter", None)
-    # ensure None if 0.0 when Auto
-    if st.session_state.get("cp_diam_mode", "Auto (None)") == "Auto (None)":
-        diameter = None
-
-    return dict(
-        channels=(ch1, ch2),
-        diameter=diameter,
-        cellprob_threshold=float(st.session_state.get("cp_cellprob_threshold", -0.2)),
-        flow_threshold=float(st.session_state.get("cp_flow_threshold", 0.4)),
-        min_size=int(st.session_state.get("cp_min_size", 0)),
-        do_normalize=bool(st.session_state.get("cp_do_normalize", True)),
-    )
-
 
 # ---------- Sidebar: Box utilities ----------
 
@@ -275,9 +213,28 @@ def _read_cellpose_hparams_from_state():
 def box_tools_fragment(key_ns="side"):
     rec = current()
     row = st.container()
-    c1, c2, c3 = row.columns([1, 1, 1])
+    (
+        c1,
+        c2,
+    ) = row.columns([1, 1])
 
-    if c1.button("Clear boxes", use_container_width=True, key=f"{key_ns}_clear_boxes"):
+    if c1.button("Draw box", use_container_width=True, key=f"{key_ns}_draw_boxes"):
+        st.session_state[f"{key_ns}_interaction_mode"] = "Draw box"
+        st.rerun()
+
+    if c2.button("Remove box", use_container_width=True, key=f"{key_ns}_remove_boxes"):
+        st.session_state[f"{key_ns}_interaction_mode"] = "Remove box"
+        st.rerun()
+
+    row = st.container()
+    (
+        c1,
+        c2,
+    ) = row.columns([1, 1])
+
+    if c1.button(
+        "Remove all boxes", use_container_width=True, key=f"{key_ns}_clear_boxes"
+    ):
         rec["boxes"] = []
         st.session_state["pred_canvas_nonce"] += 1
         st.rerun()
@@ -288,9 +245,7 @@ def box_tools_fragment(key_ns="side"):
             st.session_state["pred_canvas_nonce"] += 1
             st.rerun()
 
-    if c3.button(
-        "Predict masks in boxes", use_container_width=True, key=f"{key_ns}_predict"
-    ):
+    if st.button("Predict Masks", use_container_width=True, key=f"{key_ns}_predict"):
         new_masks = _run_sam2_on_boxes(rec)
         for mask in new_masks:
             inst, new_id = integrate_new_mask(rec["masks"], mask)
@@ -311,17 +266,28 @@ def box_tools_fragment(key_ns="side"):
 @st.fragment
 def mask_tools_fragment(key_ns="side"):
     rec = current()
-    row2 = st.container()
-    c4, c5 = row2.columns([1, 1])
+    row = st.container()
+    c1, c2 = row.columns([1, 1])
 
-    if c4.button("Clear masks", use_container_width=True, key=f"{key_ns}_clear_masks"):
+    if c1.button("Draw mask", use_container_width=True, key=f"{key_ns}_draw_masks"):
+        st.session_state[f"{key_ns}_interaction_mode"] = "Draw mask"
+        st.rerun()
+
+    if c2.button("Remove mask", use_container_width=True, key=f"{key_ns}_remove_masks"):
+        st.session_state[f"{key_ns}_interaction_mode"] = "Remove mask"
+        st.rerun()
+
+    row = st.container()
+    c1, c2 = row.columns([1, 1])
+
+    if c1.button("Clear masks", use_container_width=True, key=f"{key_ns}_clear_masks"):
         rec["masks"] = np.zeros((rec["H"], rec["W"]), dtype=np.uint16)
         rec["labels"] = {}
         rec["last_click_xy"] = None
         st.session_state["edit_canvas_nonce"] += 1
         st.rerun()
 
-    if c5.button(
+    if c2.button(
         "Remove last mask", use_container_width=True, key=f"{key_ns}_undo_mask"
     ):
         max_id = int(rec["masks"].max())
@@ -512,8 +478,10 @@ def render_sidebar(*, key_ns: str = "side"):
     st.markdown("### Create and edit cell masks:")
     interaction_mode_fragment(ns=key_ns)
     cellpose_actions_fragment()
-    box_tools_fragment(key_ns)
-    mask_tools_fragment(key_ns)
+    with st.expander("Draw boxes and click predict to add masks", expanded=True):
+        box_tools_fragment(key_ns)
+    with st.expander("Manually draw and remove masks", expanded=True):
+        mask_tools_fragment(key_ns)
 
 
 def render_main(*, key_ns: str = "edit"):

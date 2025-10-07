@@ -50,6 +50,10 @@ def configure_tf_cpu_only():
 
 configure_tf_cpu_only()
 
+import os
+
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+
 # ============================================================
 # ---------------------------- Sidebar -----------------------
 # ============================================================

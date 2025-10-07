@@ -9,6 +9,9 @@ from helpers import config as cfg  # CKPT_PATH, CFG_PATH
 from typing import Dict, Any
 from scipy import ndimage as ndi
 
+from helpers.cellpose_functions import segment_rec_with_cellpose
+from helpers.state_ops import ordered_keys, current
+
 
 # ============================================================
 # ---------------- MAKE AND EDIT BOXES -----------------------
@@ -272,3 +275,58 @@ def composite_over_by_class(image_u8, label_inst, classes_map, palette, alpha=0.
         out[edge] = 1.0
 
     return (np.clip(out, 0, 1) * 255).astype(np.uint8)
+
+
+def _reset_cellpose_hparams_to_defaults():
+    st.session_state["cp_ch1"] = 0
+    st.session_state["cp_ch2"] = 0
+    st.session_state["cp_diam_mode"] = "Auto (None)"
+    st.session_state["cp_diameter"] = None
+    st.session_state["cp_cellprob_threshold"] = -0.2
+    st.session_state["cp_flow_threshold"] = 0.4
+    st.session_state["cp_min_size"] = 0
+    st.session_state["cp_do_normalize"] = True
+    st.toast("Cellpose hyperparameters reset to defaults")
+
+
+def _segment_current_and_refresh():
+    rec = current()
+    if rec is not None:
+        params = _read_cellpose_hparams_from_state()
+        segment_rec_with_cellpose(rec, **params)
+        st.session_state["edit_canvas_nonce"] += 1
+    st.rerun()
+
+
+def _batch_segment_and_refresh():
+    ok = ordered_keys()
+    if not ok:
+        return
+    params = _read_cellpose_hparams_from_state()
+    n = len(ok)
+    pb = st.progress(0.0, text="Starting…")
+    for i, k in enumerate(ok, 1):
+        segment_rec_with_cellpose(st.session_state.images.get(k), **params)
+        pb.progress(i / n, text=f"Segmented {i}/{n}")
+    pb.empty()
+    st.session_state["edit_canvas_nonce"] += 1
+    st.rerun()
+
+
+def _read_cellpose_hparams_from_state():
+    # Build kwargs matching segment_rec_with_cellpose signature
+    ch1 = int(st.session_state.get("cp_ch1", 0))
+    ch2 = int(st.session_state.get("cp_ch2", 0))
+    diameter = st.session_state.get("cp_diameter", None)
+    # ensure None if 0.0 when Auto
+    if st.session_state.get("cp_diam_mode", "Auto (None)") == "Auto (None)":
+        diameter = None
+
+    return dict(
+        channels=(ch1, ch2),
+        diameter=diameter,
+        cellprob_threshold=float(st.session_state.get("cp_cellprob_threshold", -0.2)),
+        flow_threshold=float(st.session_state.get("cp_flow_threshold", 0.4)),
+        min_size=int(st.session_state.get("cp_min_size", 0)),
+        do_normalize=bool(st.session_state.get("cp_do_normalize", True)),
+    )
