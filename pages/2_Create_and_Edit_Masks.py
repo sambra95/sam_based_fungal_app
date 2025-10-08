@@ -4,7 +4,7 @@ from panels import mask_editing_panel
 
 common_boot()
 
-st.title("🎭 Creat and Edit Segmentation Masks")
+st.title("🎭 Create and Edit Segmentation Masks")
 
 st.divider()
 
