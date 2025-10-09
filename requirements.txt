@@ -7,7 +7,7 @@ matplotlib
 Pillow
 scikit-learn
 scikit-image~=0.25
-streamlit==1.4.0
+streamlit==1.40.0 # streamlit-drawable-canvas requires <=1.40.0
 tensorflow
 keras==3.10 # 3.11 does not work, which might be a bit restrictive
 torch>=2.5.1
