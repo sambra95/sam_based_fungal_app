@@ -2,9 +2,7 @@ import streamlit as st
 from helpers.state_ops import (
     ordered_keys,
 )
-from helpers.upload_download_functions import (
-    _process_uploads,
-)
+from helpers.upload_download_functions import _process_uploads, render_images_form
 import os, tempfile, hashlib
 import numpy as np
 
@@ -120,48 +118,4 @@ def render_main():
             st.info("No images uploaded yet.")
         else:
             with st.container(height=580):
-                h1, h2, h3, h4, h5 = st.columns([4, 2, 2, 2, 2])
-                h1.markdown(
-                    "<div style='text-align: center; font-weight: bold;'>Image</div>",
-                    unsafe_allow_html=True,
-                )
-                h2.markdown(
-                    "<div style='text-align: center; font-weight: bold;'>Masks?</div>",
-                    unsafe_allow_html=True,
-                )
-                h3.markdown(
-                    "<div style='text-align: center; font-weight: bold;'>Number of Masks</div>",
-                    unsafe_allow_html=True,
-                )
-                h4.markdown(
-                    "<div style='text-align: center; font-weight: bold;'>Labelled Masks</div>",
-                    unsafe_allow_html=True,
-                )
-                h5.markdown(
-                    "<div style='text-align: center; font-weight: bold;'>Remove</div>",
-                    unsafe_allow_html=True,
-                )
-                for k in ok:
-                    rec = ss.images[k]  # sets the row record
-                    masks = rec.get("masks")
-                    n_labels = len([v for v in rec["labels"].values() if v != None])
-                    # n_labels is just number of values of not None in dictionary
-                    has_mask = (
-                        isinstance(masks, np.ndarray)
-                        and masks.ndim == 2
-                        and masks.any()
-                    )  # check for a mask with the right format
-                    n_cells = (
-                        int(len(np.unique(masks)) - 1) if has_mask else 0
-                    )  # n_cells = number of non 0 integers
-                    c1, c2, c3, c4, c5 = st.columns([4, 2, 2, 2, 2])
-                    # write out the table
-                    c1.write(rec["name"])
-                    c2.write("✅" if has_mask else "❌")
-                    c3.write(str(n_cells))
-                    c4.write(f"{n_labels}/{n_cells}")
-                    if c5.button("❌", key=f"remove_{k}", use_container_width=True):
-                        del ss.images[k]
-                        ok2 = ordered_keys()
-                        ss.current_key = ok2[0] if ok2 else None
-                        st.rerun()
+                render_images_form()
