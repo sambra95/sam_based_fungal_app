@@ -119,7 +119,6 @@ def _read_cellpose_hparams_from_state():
         cellprob_threshold=float(st.session_state.get("cp_cellprob_threshold", -0.2)),
         flow_threshold=float(st.session_state.get("cp_flow_threshold", 0.4)),
         min_size=int(st.session_state.get("cp_min_size", 0)),
-        do_normalize=bool(st.session_state.get("cp_do_normalize", True)),
     )
 
 
@@ -132,7 +131,6 @@ def _reset_cellpose_hparams_to_defaults():
     st.session_state["cp_cellprob_threshold"] = -0.2
     st.session_state["cp_flow_threshold"] = 0.4
     st.session_state["cp_min_size"] = 0
-    st.session_state["cp_do_normalize"] = True
     st.toast("Cellpose hyperparameters reset to defaults")
 
 

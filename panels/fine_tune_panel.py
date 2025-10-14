@@ -305,6 +305,7 @@ def cellpose_train_fragment():
     lr = float(ss.get("cp_lr", 5e-5))
     wd = float(ss.get("cp_wd", 0.1))
     nimg = int(ss.get("cp_nimg", 32))
+    channels = ss.get("cellpose_channels", [0, 0])
 
     train_losses, test_losses, model_name = finetune_cellpose_from_records(
         recs,
@@ -313,6 +314,7 @@ def cellpose_train_fragment():
         learning_rate=lr,
         weight_decay=wd,
         nimg_per_epoch=nimg,
+        channels=channels,
     )
 
     st.success(f"Fine-tuning complete ✅ (model: {model_name})")
