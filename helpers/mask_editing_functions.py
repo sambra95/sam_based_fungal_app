@@ -598,7 +598,7 @@ def display_and_interact_fragment(key_ns="edit", mode_ns="side", scale=1.5):
             update_streamlit=True,
             width=disp_w,
             height=disp_h,
-            drawing_mode="freedraw",
+            drawing_mode="freedraw",  # new arguement
             point_display_radius=3,
             initial_drawing=None,
             key=f"{key_ns}_canvas_edit_{st.session_state['edit_canvas_nonce']}",
@@ -645,7 +645,7 @@ def display_and_interact_fragment(key_ns="edit", mode_ns="side", scale=1.5):
             update_streamlit=True,
             width=disp_w,
             height=disp_h,
-            drawing_mode="rect",
+            drawing_mode="rect",  # new arguement
             point_display_radius=3,
             initial_drawing=initial_json,
             key=f"{key_ns}_canvas_pred_{st.session_state['pred_canvas_nonce']}",
