@@ -1,17 +1,10 @@
 # panels/classify_cells.py
 import numpy as np
 import streamlit as st
-from PIL import Image
-import io
-import pandas as pd
-from pathlib import Path
-from zipfile import ZipFile
-import cv2
-from tensorflow.keras.applications.densenet import preprocess_input
-import numpy as np, cv2
-from skimage.exposure import rescale_intensity
+import numpy as np
 
-from helpers.state_ops import ordered_keys
+from helpers.state_ops import ordered_keys, current
+from helpers.densenet_functions import classify_cells_with_densenet
 
 ss = st.session_state
 
@@ -51,20 +44,6 @@ def color_hex_for(name: str) -> str:
             choice = PALETTE_HEX[len(cmap) % len(PALETTE_HEX)]
         cmap[name] = choice
     return cmap[name]
-
-
-def normalize_crop(image: np.ndarray) -> np.ndarray:
-    """
-    Apply Cellpose-specific normalization:
-    - Normalize by mean intensity
-    - Rescale to 0-1
-    """
-    im = image.astype(np.float32)
-    mean_val = np.mean(im)
-    if mean_val == 0:
-        raise ValueError("Image mean is zero; cannot normalize.")
-    meannorm = im * (0.5 / mean_val)
-    return rescale_intensity(meannorm, in_range="image", out_range=(0, 1))
 
 
 def _color_chip_md(hex_color: str, size: int = 14) -> str:
@@ -241,90 +220,7 @@ def classes_map_from_labels(masks, labels):
     return classes_map
 
 
-def _stem(name: str) -> str:
-    return Path(name).stem
-
-
-def extract_masked_cell_patch(
-    image: np.ndarray, mask: np.ndarray, size: int | tuple[int, int] = 64
-):
-    im, m = np.asarray(image), np.asarray(mask, bool)
-    if im.shape[:2] != m.shape:
-        raise ValueError("image/mask size mismatch")
-    if not m.any():
-        return None
-    if im.ndim == 3 and im.shape[2] == 4:
-        im = cv2.cvtColor(im, cv2.COLOR_RGBA2RGB)
-
-    ys, xs = np.where(m)
-    y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
-    crop, mc = im[y0:y1, x0:x1], m[y0:y1, x0:x1]
-    crop = (crop * mc[..., None] if crop.ndim == 3 else crop * mc).astype(im.dtype)
-
-    tw, th = (size, size) if isinstance(size, int) else map(int, size)
-    h, w = crop.shape[:2]
-    s = min(tw / w, th / h)
-    nw, nh = max(1, int(w * s)), max(1, int(h * s))
-    resized = cv2.resize(
-        crop, (nw, nh), interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_LINEAR
-    )
-
-    canvas = np.zeros(
-        (th, tw) if resized.ndim == 2 else (th, tw, resized.shape[2]), dtype=im.dtype
-    )  # black pad
-    yx = ((th - nh) // 2, (tw - nw) // 2)
-    canvas[yx[0] : yx[0] + nh, yx[1] : yx[1] + nw, ...] = resized
-    return canvas
-
-
-def _u8(a):
-    if a.dtype == np.uint8:
-        return a
-    a = a.astype(np.float32)
-    return np.clip(a * 255 if a.max() <= 1 else a, 0, 255).astype(np.uint8)
-
-
-def make_classifier_zip(patch_size: int = 64) -> bytes | None:
-    rows, buf = [], io.BytesIO()
-    with ZipFile(buf, "w") as zf:
-        for k in ordered_keys():
-            rec = st.session_state.images[k]
-            img, M = rec.get("image"), rec.get("masks")
-            if (
-                img is None
-                or not isinstance(M, np.ndarray)
-                or M.ndim != 3
-                or M.shape[0] == 0
-            ):
-                continue
-            M = (M > 0).astype(np.uint8)
-            labs = list(rec.get("labels", [])) + [None] * max(
-                0, M.shape[0] - len(rec.get("labels", []))
-            )
-            inst = stack_to_instances_binary_first(M)
-            base = _stem(rec["name"])
-            for iid in np.unique(inst)[1:]:
-                mm = (inst == int(iid)).astype(np.uint8)
-                if not mm.any():
-                    continue
-                owner = int(np.argmax(M[:, mm.astype(bool)].sum(axis=1)))
-                cls = labs[owner]
-                if cls in (None, "Remove label"):
-                    continue
-                patch = extract_masked_cell_patch(img, mm, size=patch_size)
-                if patch is None:
-                    continue
-                name = f"{base}_mask{int(iid)}.png"
-                bio = io.BytesIO()
-                Image.fromarray(_u8(patch)).save(bio, "PNG")
-                zf.writestr(f"images/{name}", bio.getvalue())
-                rows.append({"image": name, "mask number": int(iid), "class": cls})
-        if rows:
-            zf.writestr("labels.csv", pd.DataFrame(rows).to_csv(index=False))
-    return buf.getvalue() if rows else None
-
-
-def _row(name: str, count: int, key: str):
+def _row(name: str, count: int, key: str, mode_ns: str = "side"):
     # icon | name | count | select |
     c1, c2, c3, c4 = st.columns([1, 5, 2, 3])
     if name == "Remove label":
@@ -333,11 +229,17 @@ def _row(name: str, count: int, key: str):
         c1.markdown(_color_chip_md(color_hex_for(name)), unsafe_allow_html=True)
     c2.write(f"**{name}**")
     c3.write(str(count))
+
+    def _select():
+        # pick this class AND switch the main panel to Assign class mode
+        st.session_state["pending_class"] = name
+        st.session_state[f"interaction_mode"] = "Assign class"
+
     c4.button(
         "Select",
         key=f"{key}_select",
         use_container_width=True,
-        on_click=lambda n=name: st.session_state.__setitem__("pending_class", n),
+        on_click=_select,
     )
 
 
@@ -352,108 +254,119 @@ def _add_label_from_input(labels, new_label_ss):
     st.session_state["side_new_label"] = ""
 
 
-def resize_with_aspect_ratio(img, target_size=64):
-    h, w = img.shape[:2]
-    scale = target_size / max(h, w)
-    new_w, new_h = int(w * scale), int(h * scale)
-    resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+# -----------------------------------------------------#
+# ------------- CLASSIFY SIDEBA ACTIONS -------------- #
+# -----------------------------------------------------#
 
-    # create square canvas
-    canvas = np.zeros(
-        (target_size, target_size, *([img.shape[2]] if img.ndim == 3 else [])),
-        dtype=img.dtype,
+
+@st.fragment
+def classify_actions_fragment():
+    rec = current()
+    st.button(
+        "Classify this image with DenseNet-121",
+        use_container_width=True,
+        on_click=lambda: _classify_one_and_refresh(rec),
     )
-    y0 = (target_size - new_h) // 2
-    x0 = (target_size - new_w) // 2
-    canvas[y0 : y0 + new_h, x0 : x0 + new_w] = resized
-    return canvas
+
+    st.button(
+        "Batch classify all images with DenseNet-121",
+        key="btn_batch_classify_cellpose",
+        use_container_width=True,
+        on_click=_batch_classify_and_refresh,
+    )
 
 
-def classify_cells_with_densenet(rec: dict) -> None:
-    """Classify segmented cell masks in `rec` using a DenseNet-121 model.
-    Mutates `rec` and session_state, then triggers a rerun on success.
-    """
-    model = ss.get("densenet_model")
-    if model is None:
-        st.warning("Upload a DenseNet-121 classifier in the sidebar first.")
+def _classify_one_and_refresh(rec):
+    """classify masks in the current image"""
+    if rec is not None:
+        classify_cells_with_densenet(rec)
+    st.rerun()
+
+
+def _batch_classify_and_refresh():
+    """classify masks in the all images"""
+    ok = ordered_keys()
+    if not ok:
+        return
+    n = len(ok)
+    pb = st.progress(0.0, text="Starting…")
+    for i, k in enumerate(ok, 1):
+        classify_cells_with_densenet(st.session_state.images.get(k))
+        pb.progress(i / n, text=f"Classified {i}/{n}")
+    pb.empty()
+    st.rerun()
+
+
+# -----------------------------------------------------#
+# ------------- RENDER CLASSIFY SIDEBAR -------------- #
+# -----------------------------------------------------#
+
+
+def class_selection_fragment():
+
+    # Promote any pending class BEFORE widgets are created
+    ss = st.session_state
+    if "pending_class" in ss:
+        pc = ss.pop("pending_class")
+        if pc not in ss["all_classes"]:
+            ss["all_classes"].append(pc)
+        ss["side_current_class"] = pc
+    ss.setdefault("side_current_class", ss["all_classes"][0])
+
+    rec = current()
+    labels = ss.setdefault("all_classes", ["Remove label"])
+    labdict = rec.get("labels", {}) if isinstance(rec.get("labels"), dict) else {}
+
+    # Unlabel row
+    _row(
+        "Remove label", sum(1 for v in labdict.values() if v is None), key="use_unlabel"
+    )
+
+    # Actual classes
+    for name in [c for c in labels if c != "Remove label"]:
+        _row(name, sum(1 for v in labdict.values() if v == name), key=f"use_{name}")
+
+    if st.button(
+        key="clear_labels_btn", use_container_width=True, label="Clear mask labels"
+    ):
+        rec["labels"] = {int(i): None for i in np.unique(rec["masks"]) if i != 0}
+        st.rerun()
+
+
+@st.fragment
+def class_manage_fragment(key_ns="side"):
+    ss = st.session_state
+    labels = ss.setdefault("all_classes", ["Remove label"])
+
+    st.markdown("### Add and remove classes")
+    st.text_input(
+        "",
+        key="side_new_label",
+        placeholder="Enter a new class here",
+        on_change=_add_label_from_input(labels, ss.get("side_new_label", "")),
+    )
+
+    st.text_input(
+        "",
+        key="delete_new_label",
+        placeholder="Delete class here.",
+        on_change=remove_class_everywhere(ss.get("delete_new_label", "")),
+    )
+
+    editable = [c for c in ss.get("all_classes", []) if c != "Remove label"]
+    if not editable:
+        st.caption("No classes yet. Add a class above first.")
         return
 
-    M = rec.get("masks")
-    if not isinstance(M, np.ndarray) or M.ndim != 2 or not np.any(M):
-        st.info("No masks to classify.")
-        return
-
-    # Build usable class names (fallback to two defaults)
-    all_classes = [c for c in ss.get("all_classes", []) if c != "Remove label"] or [
-        "class0",
-        "class1",
-    ]
-
-    # Gather instance ids and extract 64x64 patches
-    ids = [int(v) for v in np.unique(M) if v != 0]
-    patches, keep_ids = [], []
-
-    for iid in ids:
-        patch = np.asarray(extract_masked_cell_patch(rec["image"], M == iid, size=64))
-        if patch.ndim == 2:
-            patch = np.repeat(patch[..., None], 3, axis=2)
-        elif patch.ndim == 3 and patch.shape[2] == 4:
-            patch = cv2.cvtColor(patch, cv2.COLOR_RGBA2RGB)
-        elif patch.ndim == 3 and patch.shape[2] == 3:
-            patch = cv2.cvtColor(patch, cv2.COLOR_BGR2RGB)
-
-        patch = resize_with_aspect_ratio(patch, 64)
-        patches.append(preprocess_input(patch.astype(np.float32)))
-        keep_ids.append(iid)
-
-    if not patches:
-        st.info("No valid patches extracted.")
-        return
-
-    # Predict classes
-    X = np.stack(patches, axis=0)
-    preds = model.predict(X, verbose=0).argmax(axis=1)
-
-    # Write back labels, extend class list if needed
-    labels = rec.setdefault("labels", {})
-    for iid, cls_idx in zip(keep_ids, preds):
-        idx = int(cls_idx)
-        name = all_classes[idx] if idx < len(all_classes) else str(idx)
-        labels[int(iid)] = name
-        if name and name != "Remove label" and name not in ss.get("all_classes", []):
-            ss.setdefault("all_classes", []).append(name)
-
-    # Persist updated record and rerun UI
-    ss.images[ss.current_key] = rec
-
-
-def stack_to_instances_binary_first(m: np.ndarray) -> np.ndarray:
-    """
-    Robust stack (N,H,W,[...]) -> instance labels (H,W) uint16.
-    - Treats >0 as 1
-    - Resolves overlaps by descending area (largest wins), matching UI behavior.
-    """
-    m = np.asarray(m)
-    if m.ndim == 4 and m.shape[-1] in (1, 3):
-        m = m[..., 0]
-    if m.ndim == 3 and m.shape[-1] in (1, 3):  # (H,W,1) sneaking in as 'stack'
-        m = m[..., 0][None, ...]
-    if m.ndim == 2:
-        m = m[None, ...]
-    bin_stack = (m > 0).astype(np.uint8)
-
-    N, H, W = bin_stack.shape
-    areas = bin_stack.reshape(N, -1).sum(axis=1)
-    order = np.argsort(-areas)  # largest first
-
-    inst = np.zeros((H, W), dtype=np.uint16)
-    curr_id = 1
-    for ch in order:
-        mm = bin_stack[ch] > 0
-        if mm.sum() == 0:
-            continue
-        write_here = mm & (inst == 0)
-        if write_here.any():
-            inst[write_here] = curr_id
-            curr_id += 1
-    return inst
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        st.selectbox("Class to relabel", options=editable, key=f"{key_ns}_rename_from")
+    with c2:
+        st.text_input(
+            "New label",
+            key=f"{key_ns}_rename_to",
+            placeholder="Type the new class name and press Enter",
+            on_change=_rename_class_from_input(
+                f"{key_ns}_rename_from", f"{key_ns}_rename_to"
+            ),
+        )

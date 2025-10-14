@@ -120,6 +120,46 @@ def create_new_record_with_image(uploaded_file):
     st.session_state.current_key = k
 
 
+def render_images_form():
+    """display the uploaded images table"""
+    ss, ok = st.session_state, sorted(st.session_state.images)
+
+    def is_mask(m):
+        return isinstance(m, np.ndarray) and m.ndim == 2 and m.any()
+
+    rows = []
+    for k in ok:
+        rec, m = ss.images[k], ss.images[k].get("masks")
+        has = is_mask(m)
+        n = int(len(np.unique(m)) - 1) if has else 0
+        nl = sum(v is not None for v in rec.get("labels", {}).values())
+        rows.append(
+            {
+                "Image": rec.get("name", k),
+                "Masks?": "✅" if has else "❌",
+                "Number of Masks": n,
+                "Labelled Masks": f"{nl}/{n}",
+                "Remove": False,
+            }
+        )
+
+    with st.form("images_form"):
+        edited = st.data_editor(
+            pd.DataFrame(rows, index=ok),
+            hide_index=True,
+            height=580,
+            use_container_width=True,
+            column_config={"Remove": st.column_config.CheckboxColumn()},
+            disabled=["Image", "Masks Present", "Number of Masks", "Number of Labels"],
+        )
+        if st.form_submit_button("Apply", use_container_width=True):
+            for k in edited.loc[edited["Remove"]].index:
+                ss.images.pop(k, None)
+            ks = sorted(ss.images)
+            ss.current_key = ks[0] if ks else None
+            st.rerun()
+
+
 # --------------------------------------
 # --------- DOWNLOAD FUNCTIONS ---------
 # --------------------------------------

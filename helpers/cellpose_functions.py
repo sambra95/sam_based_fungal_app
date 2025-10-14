@@ -8,6 +8,7 @@ from PIL import Image
 import io as IO
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import r2_score, mean_absolute_error
 
 
 def finetune_cellpose_from_records(
@@ -205,13 +206,6 @@ def segment_rec_with_cellpose(
     }  # reset/realign
 
 
-def _has_cellpose_model():
-    # require both bytes and a filename
-    return bool(st.session_state.get("cellpose_model_bytes")) and bool(
-        st.session_state.get("cellpose_model_name")
-    )
-
-
 def _save_fig_to_session(fig, key_prefix: str, dpi: int = 200):
     buf = IO.BytesIO()
     fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
@@ -242,9 +236,6 @@ def _plot_losses(train_losses, test_losses):
     _save_fig_to_session(fig, key_prefix="cp_losses", dpi=300)
 
     plt.close(fig)
-
-
-from sklearn.metrics import r2_score, mean_absolute_error
 
 
 def compare_models_mean_iou_plot(

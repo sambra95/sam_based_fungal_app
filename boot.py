@@ -18,7 +18,7 @@ def configure_tf_cpu_only():
 
 
 def common_boot():
-    st.set_page_config(page_title="Mask Toggle", layout="wide")
+    # st.set_page_config(page_title="Mask Toggle", layout="wide")
     ensure_global_state()
     os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
     configure_tf_cpu_only()

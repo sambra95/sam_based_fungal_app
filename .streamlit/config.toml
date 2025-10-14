@@ -1,0 +1,7 @@
+[theme]
+base = "light"
+primaryColor = "#4D84B8"             # medium sky-blue (for highlights, buttons)
+backgroundColor = "#E9EFF4"          # main background (pale blue-gray)
+secondaryBackgroundColor = "#FFFFFF" # cards / containers
+textColor = "#2B3E50"                # soft navy text
+font = "sans serif"

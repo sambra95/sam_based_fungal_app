@@ -18,8 +18,6 @@ def render_main():
         st.info("Upload data and label masks first.")
         return False
 
-    st.markdown("## Downloads")
-
     images = st.session_state.get("images", {})
     ok = ordered_keys() if images else []
 

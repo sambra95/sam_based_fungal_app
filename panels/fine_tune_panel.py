@@ -98,7 +98,7 @@ def densenet_summary_fragment():
 @st.fragment
 def densenet_train_fragment():
     """Runs the full DenseNet training pipeline when the button is clicked."""
-    go = st.button("Start training", use_container_width=True, type="primary")
+    go = st.button("Fine tune Densenet121", use_container_width=True, type="primary")
     if not go:
         return
 
@@ -295,7 +295,7 @@ def _cellpose_options(key_ns="train_cellpose"):
 
 @st.fragment
 def cellpose_train_fragment():
-    go = st.button("Start fine-tuning", use_container_width=True, type="primary")
+    go = st.button("Fine tune Cellpose", use_container_width=True, type="primary")
     if not go:
         return
 

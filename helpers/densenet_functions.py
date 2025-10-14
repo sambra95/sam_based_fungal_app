@@ -12,10 +12,10 @@ from tensorflow.keras.utils import Sequence
 from tensorflow.keras import layers, models
 from tensorflow.keras.applications import DenseNet121
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.applications.densenet import preprocess_input
 
 # ---- bring in existing app helpers ----
 from helpers.state_ops import ordered_keys
-from helpers.classifying_functions import extract_masked_cell_patch
 from helpers.cellpose_functions import _save_fig_to_session
 
 ss = st.session_state
@@ -327,7 +327,6 @@ class AugSequence(Sequence):
     def __len__(self):
         return max(1, int(np.ceil(len(self.X) / self.bs)))
 
-    # ✅ new property
     @property
     def num_batches(self):
         return len(self)
@@ -408,6 +407,101 @@ def load_labeled_patches_from_session(patch_size: int = 64):
     X = np.stack(X, axis=0)
     y = np.array(y, dtype=np.int64)
     return X, y, all_classes
+
+
+# -------------------------------
+#  Model inference on patch
+# -------------------------------
+
+
+def extract_masked_cell_patch(
+    image: np.ndarray, mask: np.ndarray, size: int | tuple[int, int] = 64
+):
+    im, m = np.asarray(image), np.asarray(mask, bool)
+    if im.shape[:2] != m.shape:
+        raise ValueError("image/mask size mismatch")
+    if not m.any():
+        return None
+    if im.ndim == 3 and im.shape[2] == 4:
+        im = cv2.cvtColor(im, cv2.COLOR_RGBA2RGB)
+
+    ys, xs = np.where(m)
+    y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
+    crop, mc = im[y0:y1, x0:x1], m[y0:y1, x0:x1]
+    crop = (crop * mc[..., None] if crop.ndim == 3 else crop * mc).astype(im.dtype)
+
+    tw, th = (size, size) if isinstance(size, int) else map(int, size)
+    h, w = crop.shape[:2]
+    s = min(tw / w, th / h)
+    nw, nh = max(1, int(w * s)), max(1, int(h * s))
+    resized = cv2.resize(
+        crop, (nw, nh), interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_LINEAR
+    )
+
+    canvas = np.zeros(
+        (th, tw) if resized.ndim == 2 else (th, tw, resized.shape[2]), dtype=im.dtype
+    )  # black pad
+    yx = ((th - nh) // 2, (tw - nw) // 2)
+    canvas[yx[0] : yx[0] + nh, yx[1] : yx[1] + nw, ...] = resized
+    return canvas
+
+
+def classify_cells_with_densenet(rec: dict) -> None:
+    """Classify segmented cell masks in `rec` using a DenseNet-121 model.
+    Mutates `rec` and session_state, then triggers a rerun on success.
+    """
+    model = ss.get("densenet_model")
+    if model is None:
+        st.warning("Upload a DenseNet-121 classifier in the sidebar first.")
+        return
+
+    M = rec.get("masks")
+    if not isinstance(M, np.ndarray) or M.ndim != 2 or not np.any(M):
+        st.info("No masks to classify.")
+        return
+
+    # Build usable class names (fallback to two defaults)
+    all_classes = [c for c in ss.get("all_classes", []) if c != "Remove label"] or [
+        "class0",
+        "class1",
+    ]
+
+    # Gather instance ids and extract 64x64 patches
+    ids = [int(v) for v in np.unique(M) if v != 0]
+    patches, keep_ids = [], []
+
+    for iid in ids:
+        patch = np.asarray(extract_masked_cell_patch(rec["image"], M == iid, size=64))
+        if patch.ndim == 2:
+            patch = np.repeat(patch[..., None], 3, axis=2)
+        elif patch.ndim == 3 and patch.shape[2] == 4:
+            patch = cv2.cvtColor(patch, cv2.COLOR_RGBA2RGB)
+        elif patch.ndim == 3 and patch.shape[2] == 3:
+            patch = cv2.cvtColor(patch, cv2.COLOR_BGR2RGB)
+
+        patch = resize_with_aspect_ratio(patch, 64)
+        patches.append(preprocess_input(patch.astype(np.float32)))
+        keep_ids.append(iid)
+
+    if not patches:
+        st.info("No valid patches extracted.")
+        return
+
+    # Predict classes
+    X = np.stack(patches, axis=0)
+    preds = model.predict(X, verbose=0).argmax(axis=1)
+
+    # Write back labels, extend class list if needed
+    labels = rec.setdefault("labels", {})
+    for iid, cls_idx in zip(keep_ids, preds):
+        idx = int(cls_idx)
+        name = all_classes[idx] if idx < len(all_classes) else str(idx)
+        labels[int(iid)] = name
+        if name and name != "Remove label" and name not in ss.get("all_classes", []):
+            ss.setdefault("all_classes", []).append(name)
+
+    # Persist updated record and rerun UI
+    ss.images[ss.current_key] = rec
 
 
 # -------------------------------

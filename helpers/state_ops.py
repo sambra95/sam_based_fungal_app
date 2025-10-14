@@ -33,6 +33,10 @@ def ensure_global_state() -> None:
     ss.setdefault("image_uploader_nonce", 0)
     ss.setdefault("side_panel", "Upload data")
 
+    # class defaults
+    ss.setdefault("all_classes", ["Remove label"])
+    ss.setdefault("side_current_class", ss["all_classes"][0])
+
 
 def stem(p: str) -> str:
     return Path(p).stem
