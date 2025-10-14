@@ -104,6 +104,7 @@ def _batch_segment_and_refresh():
 
 
 def _read_cellpose_hparams_from_state():
+    """calls hparam values from session state"""
     # Build kwargs matching segment_rec_with_cellpose signature
     ch1 = int(st.session_state.get("cp_ch1", 0))
     ch2 = int(st.session_state.get("cp_ch2", 0))
@@ -123,6 +124,7 @@ def _read_cellpose_hparams_from_state():
 
 
 def _reset_cellpose_hparams_to_defaults():
+    """resets hparam values in session state"""
     st.session_state["cp_ch1"] = 0
     st.session_state["cp_ch2"] = 0
     st.session_state["cp_diam_mode"] = "Auto (None)"
@@ -134,56 +136,13 @@ def _reset_cellpose_hparams_to_defaults():
     st.toast("Cellpose hyperparameters reset to defaults")
 
 
-def _segment_current_and_refresh():
-    rec = current()
-    if rec is not None:
-        params = _read_cellpose_hparams_from_state()
-        segment_rec_with_cellpose(rec, **params)
-        st.session_state["edit_canvas_nonce"] += 1
-    st.rerun()
-
-
-def _batch_segment_and_refresh():
-    ok = ordered_keys()
-    if not ok:
-        return
-    params = _read_cellpose_hparams_from_state()
-    n = len(ok)
-    pb = st.progress(0.0, text="Starting…")
-    for i, k in enumerate(ok, 1):
-        segment_rec_with_cellpose(st.session_state.images.get(k), **params)
-        pb.progress(i / n, text=f"Segmented {i}/{n}")
-    pb.empty()
-    st.session_state["edit_canvas_nonce"] += 1
-    st.rerun()
-
-
-def _read_cellpose_hparams_from_state():
-    # Build kwargs matching segment_rec_with_cellpose signature
-    ch1 = int(st.session_state.get("cp_ch1", 0))
-    ch2 = int(st.session_state.get("cp_ch2", 0))
-    diameter = st.session_state.get("cp_diameter", None)
-    # ensure None if 0.0 when Auto
-    if st.session_state.get("cp_diam_mode", "Auto (None)") == "Auto (None)":
-        diameter = None
-
-    return dict(
-        channels=(ch1, ch2),
-        diameter=diameter,
-        cellprob_threshold=float(st.session_state.get("cp_cellprob_threshold", -0.2)),
-        flow_threshold=float(st.session_state.get("cp_flow_threshold", 0.4)),
-        min_size=int(st.session_state.get("cp_min_size", 0)),
-        do_normalize=bool(st.session_state.get("cp_do_normalize", True)),
-    )
-
-
 # ============================================================
 # --------- SEGMENTATION SIDEBAR (BOXES AND SAM2) ------------
 # ============================================================
 
 
 def boxes_to_fabric_rects(boxes, scale=1.0) -> Dict[str, Any]:
-    """draw box for mask predictions on canvas rendering"""
+    """draw box for sam2 mask predictions on canvas rendering"""
     rects = []
     for x0, y0, x1, y1 in boxes:
         rects.append(
@@ -208,7 +167,7 @@ def boxes_to_fabric_rects(boxes, scale=1.0) -> Dict[str, Any]:
 
 
 def draw_boxes_overlay(image_u8, boxes, alpha=0.25, outline_px=2):
-    """render the draw boxes in front of the image"""
+    """overlay drawn boxes the image"""
     base = Image.fromarray(image_u8).convert("RGBA")
     overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
     d = ImageDraw.Draw(overlay)
