@@ -1,65 +1,60 @@
 # panels/train_densenet.py
 import random
-from dataclasses import dataclass
 
 import numpy as np
 import streamlit as st
 import cv2
-from skimage.exposure import rescale_intensity
 import matplotlib.pyplot as plt
 
 from tensorflow.keras.utils import Sequence
 from tensorflow.keras import layers, models
 from tensorflow.keras.applications import DenseNet121
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.applications.densenet import preprocess_input
+from sklearn.model_selection import train_test_split
+from sklearn.utils.class_weight import compute_class_weight
+from tensorflow.keras.callbacks import EarlyStopping
+from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score
+
 
 # ---- bring in existing app helpers ----
 from helpers.state_ops import ordered_keys
-from helpers.cellpose_functions import _save_fig_to_session
+from helpers.cellpose_functions import _save_fig_to_session, normalize_image
 
 ss = st.session_state
 
 # -------------------------------
-#  Preprocessing helpers
+#  Preprocessing and loader functions
 # -------------------------------
 
 
-def normalize_image(image: np.ndarray) -> np.ndarray:
-    """
-    Cellpose-like normalization:
-      - divide by mean intensity (scale to ~0.5 mean)
-      - rescale to [0, 1]
-    """
-    im = image.astype(np.float32)
-    mean_val = float(np.mean(im))
-    if mean_val == 0:
-        # fall back to simple scaling to avoid crashing a training run
-        return (im - im.min()) / max(1e-6, (im.max() - im.min()))
-    meannorm = im * (0.5 / mean_val)
-    return rescale_intensity(meannorm, in_range="image", out_range=(0, 1))
+def generate_cell_patch(image: np.ndarray, mask: np.ndarray, patch_size: int = 64):
+    """takes an image and boolean mask input and a normalized square patch image from the mask"""
+
+    im, m = np.asarray(image), np.asarray(mask, bool)
+
+    ys, xs = np.where(m)
+    y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
+    crop, mc = im[y0:y1, x0:x1], m[y0:y1, x0:x1]
+    crop = (crop * mc[..., None] if crop.ndim == 3 else crop * mc).astype(im.dtype)
+
+    # checks to make sure crop is the correct format
+    if crop.ndim == 2:
+        crop = np.stack([crop] * 3, axis=-1)
+    elif crop.ndim == 3 and crop.shape[2] == 4:
+        crop = cv2.cvtColor(crop, cv2.COLOR_RGBA2RGB)
+    elif crop.ndim == 3 and crop.shape[2] == 3:
+        # assume BGR if from cv; convert to RGB for consistency in augmentation
+        crop = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+    else:
+        crop = crop[..., :3]
+
+    crop = resize_with_aspect_ratio(crop, patch_size=patch_size)
+    return crop.astype(np.float32)
 
 
-def resize_with_aspect_ratio(img, target_size=64):
-    """resize input image to square with target_size dimensions. maintains aspect ratio"""
-    h, w = img.shape[:2]
-    scale = target_size / max(h, w)
-    new_w, new_h = int(w * scale), int(h * scale)
-    resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
-
-    # create square canvas
-    canvas = np.zeros(
-        (target_size, target_size, *([img.shape[2]] if img.ndim == 3 else [])),
-        dtype=img.dtype,
-    )
-    y0 = (target_size - new_h) // 2
-    x0 = (target_size - new_w) // 2
-    canvas[y0 : y0 + new_h, x0 : x0 + new_w] = resized
-    return canvas
-
-
-def _resize_keep_aspect(img: np.ndarray, target=(64, 64)) -> np.ndarray:
-    th, tw = target
+def resize_with_aspect_ratio(img: np.ndarray, patch_size=64) -> np.ndarray:
+    """resizes input image to a square of with 'patch_size' height while maintaining the aspect ratio"""
+    th, tw = patch_size, patch_size
     h, w = img.shape[:2]
     if h == 0 or w == 0:
         return np.zeros((th, tw, img.shape[2] if img.ndim == 3 else 1), dtype=img.dtype)
@@ -82,30 +77,70 @@ def _resize_keep_aspect(img: np.ndarray, target=(64, 64)) -> np.ndarray:
         return canvas
 
 
-def preprocess_patch_for_training(crop: np.ndarray, target=(64, 64)) -> np.ndarray:
-    """
-    - ensure 3-ch RGB
-    - keep aspect ratio with padding to target
-    - normalize to [0,1] via normalize_image
-    - return float32
-    """
-    if crop.ndim == 2:
-        crop3 = np.stack([crop] * 3, axis=-1)
-    elif crop.ndim == 3 and crop.shape[2] == 4:
-        crop3 = cv2.cvtColor(crop, cv2.COLOR_RGBA2RGB)
-    elif crop.ndim == 3 and crop.shape[2] == 3:
-        # assume BGR if from cv; convert to RGB for consistency in augmentation
-        crop3 = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-    else:
-        crop3 = crop[..., :3]
+def generate_patches_with_ids(rec, patch_size=64):
+    """returns list of cell patches and patch ids from input record"""
 
-    sq = _resize_keep_aspect(crop3, target)
-    sq = normalize_image(sq)  # 0..1 float
-    return sq.astype(np.float32)
+    M = rec.get("masks")
+
+    # extract the individual masks
+    ids = [int(v) for v in np.unique(M) if v != 0]
+    patches, keep_ids = [], []
+    for iid in ids:
+        patches.append(
+            generate_cell_patch(
+                image=rec["image"], mask=M == iid, patch_size=patch_size
+            )
+        )
+        keep_ids.append(iid)
+
+    return patches, keep_ids
 
 
 # -------------------------------
-#  Augementation functions
+#  Model inference on patch
+# -------------------------------
+
+
+def classify_cells_with_densenet(rec: dict) -> None:
+    """Classify segmented cell masks in `rec` using a DenseNet-121 model.
+    Mutates `rec` and session_state, then triggers a rerun on success.
+    """
+
+    model = ss.get("densenet_model")
+    M = rec.get("masks")
+
+    # exit if no masks for classification
+    if not isinstance(M, np.ndarray) or M.ndim != 2 or not np.any(M):
+        return
+
+    # extract noramlized cell patches. keep ids to that class can be added to the correct mask
+    patches, keep_ids = generate_patches_with_ids(rec)
+
+    # normalize the patches
+    patches = [normalize_image(patch) for patch in patches]
+
+    # classify the patches
+    X = np.stack(patches, axis=0)
+    preds = model.predict(X, verbose=0).argmax(axis=1)
+
+    # add class predictions to the record
+    all_classes = [c for c in ss.get("all_classes", []) if c != "Remove label"] or [
+        "class0",
+        "class1",
+    ]
+    labels = rec.setdefault("labels", {})
+    for iid, cls_idx in zip(keep_ids, preds):
+        idx = int(cls_idx)
+        name = all_classes[idx] if idx < len(all_classes) else str(idx)
+        labels[int(iid)] = name
+        if name and name != "Remove label" and name not in ss.get("all_classes", []):
+            ss.setdefault("all_classes", []).append(name)
+
+    ss.images[ss.current_key] = rec
+
+
+# -------------------------------
+#  Densenet121 training: Augementation
 # -------------------------------
 
 
@@ -145,7 +180,7 @@ def geo_rotate(img, angle: int, keep_resolution: bool = True):
             flags=cv2.INTER_LINEAR,
             borderMode=cv2.BORDER_REFLECT_101,
         )
-    return rotated
+    return resize_with_aspect_ratio(rotated)
 
 
 def kernel_blur(img, method: str, ksize=(3, 3), gaussian_sigma: float = 1.0):
@@ -218,14 +253,14 @@ def random_augmentation_pipeline(image_np, num_transforms=3):
 
 
 # -------------------------------
-#  Model
+#  Densenet training: DenseNet121 Model
 # -------------------------------
 
 
-def build_densenet(input_shape=(64, 64, 3), num_classes=2, base_trainable=False):
+def build_densenet(input_shape=(64, 64, 3), num_classes=2):
     # Fresh DenseNet (no ImageNet normalization dependency)
     base = DenseNet121(weights="imagenet", include_top=False, input_shape=input_shape)
-    base.trainable = base_trainable
+    base.trainable = False
     x_in = layers.Input(shape=input_shape)
     x = base(x_in, training=False)
     x = layers.GlobalAveragePooling2D()(x)
@@ -241,73 +276,55 @@ def build_densenet(input_shape=(64, 64, 3), num_classes=2, base_trainable=False)
 
 
 # -------------------------------
-#  Data building from uploaded session images
+#  Densenet121 training: image loading
 # -------------------------------
 
 
-@dataclass
-class PatchRecord:
-    img: np.ndarray
-    label_idx: int
+def load_labeled_patches_from_session(patch_size: int = 64):
+    """
+    Build X, y from all loaded images with labels.
+    """
+    ims = st.session_state.get("images", {}) or {}
+    all_classes = [
+        c for c in st.session_state.get("all_classes", []) if c != "Remove label"
+    ]
+    if not all_classes:
+        all_classes = ["class0", "class1"]
+    name_to_idx = {c: i for i, c in enumerate(all_classes)}
 
-
-def _iter_instance_patches():
-    ims = ss.get("images", {}) or {}
+    X, y = [], []
     for k in ordered_keys():
         rec = ims.get(k) or {}
-        img = rec.get("image")
-        M = rec.get("masks")
-        labmap = rec.get("labels", {}) or {}
+        img, M, labs = rec.get("image"), rec.get("masks"), rec.get("labels", {})
         if img is None or not isinstance(M, np.ndarray) or M.ndim != 2 or not np.any(M):
             continue
         ids = [int(v) for v in np.unique(M) if v != 0]
         for iid in ids:
-            cname = labmap.get(int(iid))
+            cname = labs.get(int(iid))
             if not cname or cname == "Remove label":
                 continue
-            # cropped RGB patch around this instance
-            patch = extract_masked_cell_patch(img, (M == iid).astype(np.uint8), size=0)
-            if patch is None or patch.size == 0:
-                continue
-            yield patch, cname
+            patch = generate_cell_patch(
+                image=img, mask=(M == iid), patch_size=patch_size
+            )
 
+            X.append(patch)
+            y.append(name_to_idx[cname])
 
-def _build_label_index():
-    # Use current session classes (excluding "Remove label") in stable order
-    classes = [c for c in ss.get("all_classes", []) if c != "Remove label"]
-    # Guarantee presence
-    classes = list(dict.fromkeys(classes))  # de-dupe keep order
-    if not classes:
-        classes = ["class0", "class1"]
-    name_to_idx = {c: i for i, c in enumerate(classes)}
-    return classes, name_to_idx
-
-
-def load_patches_from_session(target=(64, 64)):
-    classes, name_to_idx = _build_label_index()
-    X, y = [], []
-    for patch, cname in _iter_instance_patches():
-        X.append(preprocess_patch_for_training(patch, target))
-        y.append(name_to_idx.get(cname, None))
-    # filter any None labels (shouldn't happen if classes contain all)
-    pairs = [(xi, yi) for xi, yi in zip(X, y) if yi is not None]
-    if not pairs:
+    if not X:
         return (
-            np.zeros((0, *target, 3), dtype=np.float32),
+            np.zeros((0, patch_size, patch_size, 3), dtype=np.float32),
             np.zeros((0,), dtype=np.int64),
-            classes,
+            all_classes,
         )
-    Xf = np.stack([p[0] for p in pairs], axis=0)
-    yf = np.array([p[1] for p in pairs], dtype=np.int64)
-    return Xf, yf, classes
 
-
-# -------------------------------
-#  Keras Sequence with augmentation pipeline
-# -------------------------------
+    X = np.stack(X, axis=0)
+    y = np.array(y, dtype=np.int64)
+    return X, y, all_classes
 
 
 class AugSequence(Sequence):
+    """class for loading image/label pairs into densenet for training."""
+
     def __init__(
         self, X, y, batch_size=32, num_transforms=3, shuffle=True, target_size=None
     ):
@@ -346,162 +363,113 @@ class AugSequence(Sequence):
             img_uint8 = np.clip(img * 255.0, 0, 255).astype(np.uint8)
             aug = random_augmentation_pipeline(img_uint8, num_transforms=self.nt)
             aug = normalize_image(aug)
-            if aug.ndim == 2:
-                aug = np.stack([aug] * 3, axis=-1)
-            elif aug.ndim == 3 and aug.shape[2] > 3:
-                aug = aug[:, :, :3]
-            aug = _resize_keep_aspect(aug, target=self.target_size)
             out.append(aug.astype(np.float32))
 
         Xo = np.stack(out, axis=0)
         return Xo, yb
 
 
-def load_labeled_patches_from_session(patch_size: int = 64):
-    """
-    Build (X, y, classes) directly from the app's uploaded images + user labels.
-    Uses the same extract_masked_cell_patch + label dicts as classification.
-    """
-    ims = st.session_state.get("images", {}) or {}
-    all_classes = [
-        c for c in st.session_state.get("all_classes", []) if c != "Remove label"
-    ]
-    if not all_classes:
-        all_classes = ["class0", "class1"]
-    name_to_idx = {c: i for i, c in enumerate(all_classes)}
+def fine_tune_densenet(input_size, batch_size, epochs, val_split):
+    # Load data
+    X, y, classes = load_labeled_patches_from_session(patch_size=input_size)
+    if X.shape[0] < 2 or len(np.unique(y)) < 2:
+        st.warning("Need at least 2 samples and 2 classes. Add more labeled cells.")
+        return
 
-    X, y = [], []
-    for k in ordered_keys():
-        rec = ims.get(k) or {}
-        img, M, labs = rec.get("image"), rec.get("masks"), rec.get("labels", {})
-        if img is None or not isinstance(M, np.ndarray) or M.ndim != 2 or not np.any(M):
-            continue
-        ids = [int(v) for v in np.unique(M) if v != 0]
-        for iid in ids:
-            cname = labs.get(int(iid))
-            if not cname or cname == "Remove label":
-                continue
-            patch = extract_masked_cell_patch(
-                img, (M == iid).astype(np.uint8), size=patch_size
-            )
-            if patch is None or patch.size == 0:
-                continue
-            # convert to 3-ch RGB
-            if patch.ndim == 2:
-                patch = np.repeat(patch[..., None], 3, axis=2)
-            elif patch.ndim == 3 and patch.shape[2] == 4:
-                patch = cv2.cvtColor(patch, cv2.COLOR_RGBA2RGB)
-            elif patch.ndim == 3 and patch.shape[2] == 3:
-                patch = cv2.cvtColor(patch, cv2.COLOR_BGR2RGB)
-            patch = resize_with_aspect_ratio(patch, patch_size)
-            X.append(patch.astype(np.float32))
-            y.append(name_to_idx[cname])
-
-    if not X:
-        return (
-            np.zeros((0, patch_size, patch_size, 3), dtype=np.float32),
-            np.zeros((0,), dtype=np.int64),
-            all_classes,
-        )
-
-    X = np.stack(X, axis=0)
-    y = np.array(y, dtype=np.int64)
-    return X, y, all_classes
-
-
-# -------------------------------
-#  Model inference on patch
-# -------------------------------
-
-
-def extract_masked_cell_patch(
-    image: np.ndarray, mask: np.ndarray, size: int | tuple[int, int] = 64
-):
-    im, m = np.asarray(image), np.asarray(mask, bool)
-    if im.shape[:2] != m.shape:
-        raise ValueError("image/mask size mismatch")
-    if not m.any():
-        return None
-    if im.ndim == 3 and im.shape[2] == 4:
-        im = cv2.cvtColor(im, cv2.COLOR_RGBA2RGB)
-
-    ys, xs = np.where(m)
-    y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
-    crop, mc = im[y0:y1, x0:x1], m[y0:y1, x0:x1]
-    crop = (crop * mc[..., None] if crop.ndim == 3 else crop * mc).astype(im.dtype)
-
-    tw, th = (size, size) if isinstance(size, int) else map(int, size)
-    h, w = crop.shape[:2]
-    s = min(tw / w, th / h)
-    nw, nh = max(1, int(w * s)), max(1, int(h * s))
-    resized = cv2.resize(
-        crop, (nw, nh), interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_LINEAR
+    # Split
+    X_train, X_val, y_train, y_val = train_test_split(
+        X, y, test_size=val_split, stratify=y, random_state=42
     )
 
-    canvas = np.zeros(
-        (th, tw) if resized.ndim == 2 else (th, tw, resized.shape[2]), dtype=im.dtype
-    )  # black pad
-    yx = ((th - nh) // 2, (tw - nw) // 2)
-    canvas[yx[0] : yx[0] + nh, yx[1] : yx[1] + nw, ...] = resized
-    return canvas
+    # Data generators
+    train_gen = AugSequence(
+        X_train,
+        y_train,
+        batch_size=batch_size,
+        num_transforms=3,
+        shuffle=True,
+        target_size=(input_size, input_size),
+    )
+    val_gen = AugSequence(
+        X_val,
+        y_val,
+        batch_size=batch_size,
+        num_transforms=0,
+        shuffle=False,
+        target_size=(input_size, input_size),
+    )
+
+    # Class weights
+    class_weights = compute_class_weight(
+        class_weight="balanced", classes=np.arange(len(classes)), y=y
+    )
+    class_weights_dict = {i: float(w) for i, w in enumerate(class_weights)}
+
+    # Build model
+    model = build_densenet(
+        input_shape=(input_size, input_size, 3),
+        num_classes=len(classes),
+    )
+
+    # Train
+    es = EarlyStopping(
+        monitor="val_loss", patience=15, restore_best_weights=True, verbose=1
+    )
+    with st.spinner("Training DenseNet…"):
+        history = model.fit(
+            train_gen,
+            validation_data=val_gen,
+            epochs=epochs,
+            callbacks=[es],
+            class_weight=class_weights_dict,
+            verbose=0,
+        )
+
+    # Persist the model in session
+    ss["densenet_ckpt_name"] = "densenet_finetuned"
+    ss["densenet_model"] = model
+
+    return history, val_gen, classes
 
 
-def classify_cells_with_densenet(rec: dict) -> None:
-    """Classify segmented cell masks in `rec` using a DenseNet-121 model.
-    Mutates `rec` and session_state, then triggers a rerun on success.
-    """
-    model = ss.get("densenet_model")
-    if model is None:
-        st.warning("Upload a DenseNet-121 classifier in the sidebar first.")
-        return
+def evaluate_fine_tinued_densenet(history, val_gen, classes):
+    """evaluates the fine tuned densenet model and plots a confusion matrix and bar graph (accuracy, precision, f1)"""
+    Xv, yv = [], []
+    for i in range(len(val_gen)):
+        xb, yb = val_gen[i]
+        Xv.append(xb)
+        yv.append(yb)
+    Xv = np.concatenate(Xv, axis=0)
+    yv = np.concatenate(yv, axis=0)
 
-    M = rec.get("masks")
-    if not isinstance(M, np.ndarray) or M.ndim != 2 or not np.any(M):
-        st.info("No masks to classify.")
-        return
+    y_probs = ss["densenet_model"].predict(Xv, verbose=0)
+    y_pred = np.argmax(y_probs, axis=1)
 
-    # Build usable class names (fallback to two defaults)
-    all_classes = [c for c in ss.get("all_classes", []) if c != "Remove label"] or [
-        "class0",
-        "class1",
-    ]
+    st.info(
+        "Model stored in session. You can use it immediately from the **Classify cells** panel."
+    )
 
-    # Gather instance ids and extract 64x64 patches
-    ids = [int(v) for v in np.unique(M) if v != 0]
-    patches, keep_ids = [], []
+    acc = accuracy_score(yv, y_pred)
+    prec = precision_score(yv, y_pred, average="weighted", zero_division=0)
+    f1 = f1_score(yv, y_pred, average="weighted", zero_division=0)
+    metrics_dict = {"Accuracy": acc, "Precision": prec, "F1": f1}
 
-    for iid in ids:
-        patch = np.asarray(extract_masked_cell_patch(rec["image"], M == iid, size=64))
-        if patch.ndim == 2:
-            patch = np.repeat(patch[..., None], 3, axis=2)
-        elif patch.ndim == 3 and patch.shape[2] == 4:
-            patch = cv2.cvtColor(patch, cv2.COLOR_RGBA2RGB)
-        elif patch.ndim == 3 and patch.shape[2] == 3:
-            patch = cv2.cvtColor(patch, cv2.COLOR_BGR2RGB)
+    # Plots
 
-        patch = resize_with_aspect_ratio(patch, 64)
-        patches.append(preprocess_input(patch.astype(np.float32)))
-        keep_ids.append(iid)
+    # plot a) losses and b) accuracy, precision and f1 on validation set
+    fig = _plot_densenet_losses(
+        history.history.get("loss", []),
+        history.history.get("val_loss", []),
+        metrics=metrics_dict,
+    )
 
-    if not patches:
-        st.info("No valid patches extracted.")
-        return
+    st.pyplot(fig, use_container_width=True)
 
-    # Predict classes
-    X = np.stack(patches, axis=0)
-    preds = model.predict(X, verbose=0).argmax(axis=1)
+    # plot confusion matrix on validation set
+    cm = confusion_matrix(yv, y_pred, labels=np.arange(len(classes)))
+    fig = _plot_confusion_matrix(cm, classes, normalize=False)
 
-    # Write back labels, extend class list if needed
-    labels = rec.setdefault("labels", {})
-    for iid, cls_idx in zip(keep_ids, preds):
-        idx = int(cls_idx)
-        name = all_classes[idx] if idx < len(all_classes) else str(idx)
-        labels[int(iid)] = name
-        if name and name != "Remove label" and name not in ss.get("all_classes", []):
-            ss.setdefault("all_classes", []).append(name)
-
-    # Persist updated record and rerun UI
-    ss.images[ss.current_key] = rec
+    st.pyplot(fig, use_container_width=True)
 
 
 # -------------------------------
@@ -608,4 +576,5 @@ def _plot_densenet_losses(train_losses, test_losses, metrics=None):
 
     # 🔸 Save PNG to session_state
     _save_fig_to_session(fig, key_prefix=f"densenet_plot_losses", dpi=300)
-    plt.close(fig)
+
+    return fig

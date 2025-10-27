@@ -10,63 +10,13 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_absolute_error
 
-
-def finetune_cellpose_from_records(
-    recs: dict,
-    base_model: str,
-    epochs=100,
-    learning_rate=0.00005,
-    weight_decay=0.1,
-    nimg_per_epoch=32,
-):
-    images = [_normalize_for_cellpose(recs[k]["image"]) for k in recs.keys()]
-    masks = [recs[k]["masks"].astype("uint16") for k in recs.keys()]
-
-    train_images, test_images, train_masks, test_masks = train_test_split(
-        images, masks, test_size=0.2, random_state=42, shuffle=True
-    )
-
-    st.info(
-        f"Training on **{len(train_images)} images** "
-        f"(+ {len(test_images)} validation images)."
-    )
-
-    use_gpu = core.use_gpu()
-    _ = io.logger_setup()
-
-    init_model = None if base_model == "scratch" else base_model
-    cell_model = models.CellposeModel(gpu=use_gpu, model_type=init_model)
-    model_name = f"{base_model}_finetuned.pt"
-
-    with st.spinner("Fine-tuning Cellpose…"):
-        new_path, train_losses, test_losses = train.train_seg(
-            cell_model.net,
-            train_data=train_images,
-            train_labels=train_masks,
-            test_data=test_images,
-            test_labels=test_masks,
-            channels=[0, 0],
-            n_epochs=epochs,
-            learning_rate=learning_rate,
-            weight_decay=weight_decay,
-            SGD=True,
-            nimg_per_epoch=nimg_per_epoch,
-            model_name=model_name,
-            save_path=None,
-        )
-
-    # stash in session
-    buf = IO.BytesIO()
-    torch.save(cell_model.net.state_dict(), buf)
-    st.session_state["cellpose_model_bytes"] = buf.getvalue()
-    st.session_state["cellpose_model_name"] = model_name
-    st.session_state["model_to_fine_tune"] = base_model
-
-    return train_losses, test_losses, model_name
+# -----------------------------------------------------#
+# ---------------- IMAGE PREPROCESSING --------------- #
+# -----------------------------------------------------#
 
 
 # --- small helper: normalization similar to your earlier pipeline ---
-def _normalize_for_cellpose(image: np.ndarray) -> np.ndarray:
+def normalize_image(image: np.ndarray) -> np.ndarray:
     im = image.astype(np.float32)
     mean_val = float(np.mean(im)) if im.size else 0.0
     if mean_val <= 0:
@@ -75,6 +25,61 @@ def _normalize_for_cellpose(image: np.ndarray) -> np.ndarray:
         return (im - im.min()) / rng if rng > 0 else im * 0.0
     meannorm = im * (0.5 / mean_val)
     return meannorm
+
+
+def preprocess_image_for_cellpose(rec):
+    """takes record input and prepares the stored image for cellpose"""
+
+    img = rec["image"]
+    if img.ndim == 3:
+        if img.shape[2] == 4:
+            img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    elif img.ndim != 2:
+        raise ValueError(
+            f"Unsupported image shape {img.shape}; expected (H,W) or (H,W,C)"
+        )
+
+    im_in = normalize_image(img)
+
+    return im_in
+
+
+def process_cellpose_mask_outputs_to_single_array(mask_output, H, W):
+    """takes mask output from cellpose and converts to a single matrix where different masks are defined by different integers"""
+
+    # ---- convert to single (H,W) label image with contiguous ids 1..N ----
+    if mask_output is None or mask_output.size == 0:
+        inst = np.zeros((H, W), dtype=np.uint8)
+        K = 0
+    else:
+        a = np.asarray(mask_output)
+        if a.shape != (H, W):
+            # (rare) ensure correct size; nearest preserves labels
+            a = np.array(
+                Image.fromarray(a).resize((W, H), Image.NEAREST), dtype=a.dtype
+            )
+
+        vals = np.unique(a)
+        ids = vals[vals > 0]
+        if ids.size == 0:
+            inst = np.zeros((H, W), dtype=np.uint8)
+            K = 0
+        else:
+            # remap old ids -> 1..K (contiguous)
+            K = int(ids.size)
+            max_old = int(a.max())
+            lut_dtype = np.uint32 if K > np.iinfo(np.uint16).max else np.uint16
+            lut = np.zeros(max_old + 1, dtype=lut_dtype)
+            lut[ids] = np.arange(1, K + 1, dtype=lut_dtype)
+            inst = lut[a]
+
+        return inst
+
+
+# -----------------------------------------------------#
+# ---------------- CELLPOSE INFERENCE ---------------- #
+# -----------------------------------------------------#
 
 
 # --- materialize session model bytes to a stable temp path ---
@@ -129,81 +134,39 @@ def segment_rec_with_cellpose(
     cellprob_threshold=-0.2,
     flow_threshold=0.4,
     min_size=0,
-    do_normalize=True,
 ) -> dict:
     """
     Runs Cellpose on rec['image'] and overwrites rec['masks'] with a single (H,W)
     integer label image (0=background, 1..N=instances). Resets rec['labels'].
     """
-    if rec is None or "image" not in rec:
-        raise ValueError(
-            "segment_rec_with_cellpose: rec must contain an 'image' ndarray"
-        )
 
-    img = rec["image"]
-    if img.ndim == 3:
-        if img.shape[2] == 4:
-            img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
-        img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    elif img.ndim != 2:
-        raise ValueError(
-            f"Unsupported image shape {img.shape}; expected (H,W) or (H,W,C)"
-        )
+    im_in = preprocess_image_for_cellpose(rec)
 
-    H, W = img.shape[:2]
-    rec["H"], rec["W"] = H, W
-    im_in = _normalize_for_cellpose(img) if do_normalize else img.astype(np.float32)
+    cell_model = _get_cellpose_model_cached()
 
-    try:
-        cell_model = _get_cellpose_model_cached()
-    except Exception as e:
-        st.error(f"Failed to load Cellpose model: {e}")
-        return rec
+    masks_out, flows, styles = cell_model.eval(
+        [im_in],
+        channels=list(channels),
+        diameter=diameter,
+        cellprob_threshold=cellprob_threshold,
+        flow_threshold=flow_threshold,
+        min_size=min_size,
+    )
+    mask_output = masks_out[0] if isinstance(masks_out, (list, tuple)) else masks_out
 
-    try:
-        masks_out, flows, styles = cell_model.eval(
-            [im_in],
-            channels=list(channels),
-            diameter=diameter,
-            cellprob_threshold=cellprob_threshold,
-            flow_threshold=flow_threshold,
-            min_size=min_size,
-        )
-        mask_lbl = masks_out[0] if isinstance(masks_out, (list, tuple)) else masks_out
-    except Exception as e:
-        st.error(f"Cellpose inference failed: {e}")
-        return rec
-
-    # ---- convert to single (H,W) label image with contiguous ids 1..N ----
-    if mask_lbl is None or mask_lbl.size == 0:
-        inst = np.zeros((H, W), dtype=np.uint8)
-        K = 0
-    else:
-        a = np.asarray(mask_lbl)
-        if a.shape != (H, W):
-            # (rare) ensure correct size; nearest preserves labels
-            a = np.array(
-                Image.fromarray(a).resize((W, H), Image.NEAREST), dtype=a.dtype
-            )
-
-        vals = np.unique(a)
-        ids = vals[vals > 0]
-        if ids.size == 0:
-            inst = np.zeros((H, W), dtype=np.uint8)
-            K = 0
-        else:
-            # remap old ids -> 1..K (contiguous)
-            K = int(ids.size)
-            max_old = int(a.max())
-            lut_dtype = np.uint32 if K > np.iinfo(np.uint16).max else np.uint16
-            lut = np.zeros(max_old + 1, dtype=lut_dtype)
-            lut[ids] = np.arange(1, K + 1, dtype=lut_dtype)
-            inst = lut[a]
-
-    rec["masks"] = inst  # (H,W) integer labels
+    # set record masks to new predicted mask matrix
+    rec["masks"] = process_cellpose_mask_outputs_to_single_array(
+        mask_output, rec["H"], rec["W"]
+    )
+    # clear any labels in the record (no new masks are labelled)
     rec["labels"] = {
         int(i): None for i in np.unique(rec["masks"]) if i != 0
     }  # reset/realign
+
+
+# -----------------------------------------------------#
+# ----------------- CELLPOSE FIGURES ----------------- #
+# -----------------------------------------------------#
 
 
 def _save_fig_to_session(fig, key_prefix: str, dpi: int = 200):
@@ -238,6 +201,10 @@ def _plot_losses(train_losses, test_losses):
     plt.close(fig)
 
 
+def _count_instances(lbl):
+    return int(np.count_nonzero(np.unique(lbl)))  # #unique nonzero ids
+
+
 def compare_models_mean_iou_plot(
     images, masks, base_model_name="cyto2", channels=(0, 0)
 ):
@@ -264,9 +231,6 @@ def compare_models_mean_iou_plot(
         metrics.average_precision([gt], [pr])[0][:, 0].mean()
         for gt, pr in zip(masks, tuned_preds)
     ]
-
-    def _count_instances(lbl):
-        return int(np.count_nonzero(np.unique(lbl)))  # #unique nonzero ids
 
     # --- IoU data ---
     labels = ["Original", "Fine-tuned"]
@@ -376,3 +340,63 @@ def compare_models_mean_iou_plot(
     _save_fig_to_session(fig, key_prefix="cp_compare_iou", dpi=300)
 
     plt.close(fig)
+
+
+# -----------------------------------------------------#
+# ---------------- FINE TUNE CELLPOSE ---------------- #
+# -----------------------------------------------------#
+
+
+def finetune_cellpose_from_records(
+    recs: dict,
+    base_model: str,
+    epochs=100,
+    learning_rate=0.00005,
+    weight_decay=0.1,
+    nimg_per_epoch=32,
+    channels=[0, 0],
+):
+    images = [preprocess_image_for_cellpose(recs[k]) for k in recs.keys()]
+    masks = [recs[k]["masks"].astype("uint16") for k in recs.keys()]
+
+    train_images, test_images, train_masks, test_masks = train_test_split(
+        images, masks, test_size=0.2, random_state=42, shuffle=True
+    )
+
+    st.info(
+        f"Training on **{len(train_images)} images** "
+        f"(+ {len(test_images)} validation images)."
+    )
+
+    use_gpu = core.use_gpu()
+    _ = io.logger_setup()
+
+    init_model = None if base_model == "scratch" else base_model
+    cell_model = models.CellposeModel(gpu=use_gpu, model_type=init_model)
+    model_name = f"{base_model}_finetuned.pt"
+
+    with st.spinner("Fine-tuning Cellpose…"):
+        new_path, train_losses, test_losses = train.train_seg(
+            cell_model.net,
+            train_data=train_images,
+            train_labels=train_masks,
+            test_data=test_images,
+            test_labels=test_masks,
+            channels=channels,
+            n_epochs=epochs,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            SGD=True,
+            nimg_per_epoch=nimg_per_epoch,
+            model_name=model_name,
+            save_path=None,
+        )
+
+    # stash in session
+    buf = IO.BytesIO()
+    torch.save(cell_model.net.state_dict(), buf)
+    st.session_state["cellpose_model_bytes"] = buf.getvalue()
+    st.session_state["cellpose_model_name"] = model_name
+    st.session_state["model_to_fine_tune"] = base_model
+
+    return train_losses, test_losses, model_name

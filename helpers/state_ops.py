@@ -25,6 +25,7 @@ def ensure_global_state() -> None:
     ss.setdefault("cyto_to_train", "Cyto1")
     ss.setdefault("train_losses", [])
     ss.setdefault("test_losses", [])
+    ss.setdefault("cellpose_channels", [0, 0])
 
     # UI defaults / nonces
     ss.setdefault("pred_canvas_nonce", 0)

@@ -4,10 +4,6 @@ import pandas as pd
 import streamlit as st
 
 # from PIL import Image  # (only if your helpers rely on PIL types somewhere)
-from sklearn.model_selection import train_test_split
-from sklearn.utils.class_weight import compute_class_weight
-from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score
-from tensorflow.keras.callbacks import EarlyStopping
 import itertools
 from cellpose import models, metrics, core
 import torch
@@ -17,10 +13,8 @@ import io as IO
 from helpers.state_ops import ordered_keys
 from helpers.densenet_functions import (
     load_labeled_patches_from_session,
-    AugSequence,
-    build_densenet,
-    _plot_confusion_matrix,
-    _plot_densenet_losses,
+    fine_tune_densenet,
+    evaluate_fine_tinued_densenet,
 )
 from helpers.cellpose_functions import (
     finetune_cellpose_from_records,
@@ -46,7 +40,6 @@ def _densenet_options(key_ns="train_densenet"):
         c1, c2, c3, c4 = st.columns(4)
         ss.setdefault("dn_input_size", 64)
         ss.setdefault("dn_batch_size", 32)
-        ss.setdefault("dn_base_trainable", False)
         ss.setdefault("dn_max_epoch", 100)
         ss.setdefault("dn_val_split", 0.2)
 
@@ -60,9 +53,7 @@ def _densenet_options(key_ns="train_densenet"):
             options=[8, 16, 32, 64],
             index=[8, 16, 32, 64].index(ss["dn_batch_size"]),
         )
-        ss["dn_base_trainable"] = c3.checkbox(
-            "Fine-tune base (unfreeze)", value=ss["dn_base_trainable"]
-        )
+
         ss["dn_max_epoch"] = c4.number_input(
             "Max epochs",
             min_value=1,
@@ -102,111 +93,26 @@ def densenet_train_fragment():
     if not go:
         return
 
-    # Read options from session
+    # Read hyperparameter options from session
     input_size = int(ss.get("dn_input_size", 64))
     batch_size = int(ss.get("dn_batch_size", 32))
-    base_trainable = bool(ss.get("dn_base_trainable", False))
     epochs = int(ss.get("dn_max_epoch", 100))
     val_split = float(ss.get("dn_val_split", 0.2))
 
-    # Load data (heavy)
-    X, y, classes = load_labeled_patches_from_session(patch_size=input_size)
-    if X.shape[0] < 2 or len(np.unique(y)) < 2:
-        st.warning("Need at least 2 samples and 2 classes. Add more labeled cells.")
-        return
-
-    # Split
-    X_train, X_val, y_train, y_val = train_test_split(
-        X, y, test_size=val_split, stratify=y, random_state=42
+    # fine tune the densenet model
+    history, val_gen, classes = fine_tune_densenet(
+        input_size=input_size, batch_size=batch_size, epochs=epochs, val_split=val_split
     )
 
-    # Data generators
-    train_gen = AugSequence(
-        X_train,
-        y_train,
-        batch_size=batch_size,
-        num_transforms=3,
-        shuffle=True,
-        target_size=(input_size, input_size),
-    )
-    val_gen = AugSequence(
-        X_val,
-        y_val,
-        batch_size=batch_size,
-        num_transforms=1,
-        shuffle=False,
-        target_size=(input_size, input_size),
-    )
-
-    # Class weights
-    class_weights = compute_class_weight(
-        class_weight="balanced", classes=np.arange(len(classes)), y=y
-    )
-    class_weights_dict = {i: float(w) for i, w in enumerate(class_weights)}
-
-    # Build model
-    model = build_densenet(
-        input_shape=(input_size, input_size, 3),
-        num_classes=len(classes),
-        base_trainable=base_trainable,
-    )
-
-    # Train
-    es = EarlyStopping(
-        monitor="val_loss", patience=15, restore_best_weights=True, verbose=1
-    )
-    with st.spinner("Training DenseNet…"):
-        history = model.fit(
-            train_gen,
-            validation_data=val_gen,
-            epochs=epochs,
-            callbacks=[es],
-            class_weight=class_weights_dict,
-            verbose=0,
-        )
-
-    # Evaluate on validation set
-    Xv, yv = [], []
-    for i in range(len(val_gen)):
-        xb, yb = val_gen[i]
-        Xv.append(xb)
-        yv.append(yb)
-    Xv = np.concatenate(Xv, axis=0)
-    yv = np.concatenate(yv, axis=0)
-
-    y_probs = model.predict(Xv, verbose=0)
-    y_pred = np.argmax(y_probs, axis=1)
-
-    st.info(
-        "Model stored in session. You can use it immediately from the **Classify cells** panel."
-    )
-
-    acc = accuracy_score(yv, y_pred)
-    prec = precision_score(yv, y_pred, average="weighted", zero_division=0)
-    f1 = f1_score(yv, y_pred, average="weighted", zero_division=0)
-    metrics_dict = {"Accuracy": acc, "Precision": prec, "F1": f1}
-
-    # Plots
-    _plot_densenet_losses(
-        history.history.get("loss", []),
-        history.history.get("val_loss", []),
-        metrics=metrics_dict,
-    )
-    cm = confusion_matrix(yv, y_pred, labels=np.arange(len(classes)))
-    fig = _plot_confusion_matrix(cm, classes, normalize=False)
-    st.pyplot(fig, use_container_width=True)
-
-    # Persist the model in session
-    ss["densenet_ckpt_bytes"] = model
-    ss["densenet_ckpt_name"] = "densenet_finetuned"
-    ss["densenet_model"] = model
+    # evaluate the fine tuned densenet model on validation dataset
+    evaluate_fine_tinued_densenet(history=history, val_gen=val_gen, classes=classes)
 
 
 def render_densenet_train_panel(key_ns: str = "train_densenet"):
     if not _densenet_options(key_ns):
         return
-    densenet_summary_fragment()  # light-ish; recomputes only when page reruns
-    densenet_train_fragment()  # heavy; runs only on button click
+    densenet_summary_fragment()
+    densenet_train_fragment()
 
 
 # ========== Cellpose: options + training ==========
@@ -305,6 +211,7 @@ def cellpose_train_fragment():
     lr = float(ss.get("cp_lr", 5e-5))
     wd = float(ss.get("cp_wd", 0.1))
     nimg = int(ss.get("cp_nimg", 32))
+    channels = ss.get("cellpose_channels", [0, 0])
 
     train_losses, test_losses, model_name = finetune_cellpose_from_records(
         recs,
@@ -313,6 +220,7 @@ def cellpose_train_fragment():
         learning_rate=lr,
         weight_decay=wd,
         nimg_per_epoch=nimg,
+        channels=channels,
     )
 
     st.success(f"Fine-tuning complete ✅ (model: {model_name})")
