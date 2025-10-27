@@ -145,8 +145,8 @@ def _cellpose_options(key_ns="train_cellpose"):
         )
         ss["cp_lr"] = c3.number_input(
             "Learning rate",
-            min_value=1e-6,
-            max_value=1e-2,
+            min_value=1e-8,
+            max_value=1.0,
             value=float(ss["cp_lr"]),
             format="%.5f",
         )
@@ -155,7 +155,9 @@ def _cellpose_options(key_ns="train_cellpose"):
             min_value=0.0,
             max_value=1.0,
             value=float(ss["cp_wd"]),
-            step=0.05,
+            step=1e-6,
+            format="%.8f",  # more decimals prevents snapping to 0
+            key="cp_wd_input",
         )
 
         ss["cp_nimg"] = st.slider("Images per epoch", 1, 128, int(ss["cp_nimg"]), 1)

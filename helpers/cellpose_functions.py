@@ -17,14 +17,23 @@ from sklearn.metrics import r2_score, mean_absolute_error
 
 # --- small helper: normalization similar to your earlier pipeline ---
 def normalize_image(image: np.ndarray) -> np.ndarray:
+    """Normalize uint8 images so output stays in [0, 255] with consistent mean."""
     im = image.astype(np.float32)
-    mean_val = float(np.mean(im)) if im.size else 0.0
+    if im.size == 0:
+        return im
+
+    mean_val = float(im.mean())
     if mean_val <= 0:
-        # safe fallback: just scale to [0,1]
+        # fallback: scale to full uint8 range
         rng = float(im.max() - im.min())
-        return (im - im.min()) / rng if rng > 0 else im * 0.0
-    meannorm = im * (0.5 / mean_val)
-    return meannorm
+        im = (im - im.min()) / rng * 255.0 if rng > 0 else im * 0.0
+    else:
+        # scale by ratio so mean intensity ≈ 127.5 (mid-gray)
+        im = im * (127.5 / mean_val)
+
+    # ensure valid uint8 range
+    im = np.clip(im, 0, 255)
+    return im.astype(np.uint8)
 
 
 def preprocess_image_for_cellpose(rec):
@@ -356,8 +365,10 @@ def finetune_cellpose_from_records(
     nimg_per_epoch=32,
     channels=[0, 0],
 ):
-    images = [preprocess_image_for_cellpose(recs[k]) for k in recs.keys()]
-    masks = [recs[k]["masks"].astype("uint16") for k in recs.keys()]
+    images, masks = [], []
+    for k in recs.keys():
+        images.append(preprocess_image_for_cellpose(recs[k]))
+        masks.append(recs[k]["masks"].astype("uint16"))
 
     train_images, test_images, train_masks, test_masks = train_test_split(
         images, masks, test_size=0.2, random_state=42, shuffle=True
