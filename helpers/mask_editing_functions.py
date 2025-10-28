@@ -322,91 +322,82 @@ def nav_fragment(key_ns="side"):
 
 
 @st.fragment
-def cellpose_actions_fragment():
-    # --- Hyperparameters (collapsible) ---
-    with st.expander("Segment cells with Cellpose", expanded=False):
+def cellpose_hyperparameters_fragment():
 
-        if st.button("Segment image with Cellpose", use_container_width=True):
-            _segment_current_and_refresh()
+    # We use a small form so changing values doesn't trigger reruns mid-typing
+    with st.form("cellpose_hparams_form", clear_on_submit=False):
+        # Channels (two ints)
+        st.number_input(
+            "Channel 1",
+            value=st.session_state.get("cp_ch1", 0),
+            step=1,
+            format="%d",
+            key="cp_ch1",
+        )
+        st.number_input(
+            "Channel 2",
+            value=st.session_state.get("cp_ch2", 0),
+            step=1,
+            format="%d",
+            key="cp_ch2",
+        )
 
-        if st.button("Segment all images with Cellpose", use_container_width=True):
-            _batch_segment_and_refresh()
-
-        # We use a small form so changing values doesn't trigger reruns mid-typing
-        with st.form("cellpose_hparams_form", clear_on_submit=False):
-            # Channels (two ints)
-            st.number_input(
-                "Channel 1",
-                value=st.session_state.get("cp_ch1", 0),
-                step=1,
-                format="%d",
-                key="cp_ch1",
-            )
-            st.number_input(
-                "Channel 2",
-                value=st.session_state.get("cp_ch2", 0),
-                step=1,
-                format="%d",
-                key="cp_ch2",
-            )
-
-            # Diameter: auto (None) or manual
-            diam_mode = st.selectbox(
-                "Diameter mode",
-                ["Auto (None)", "Manual"],
-                index=(
-                    0
-                    if st.session_state.get("cp_diam_mode", "Auto (None)")
-                    == "Auto (None)"
-                    else 1
-                ),
-                key="cp_diam_mode",
-                help="Leave as Auto for Cellpose to estimate diameter, or set a manual value.",
-            )
-            diam_val = None
-            if diam_mode == "Manual":
-                diam_val = st.number_input(
-                    "Manual diameter (pixels)",
-                    min_value=0.0,
-                    value=float(st.session_state.get("cp_diameter", 0.0) or 0.0),
-                    step=1.0,
-                    key="cp_diameter",
-                )
-
-            # Thresholds & size
-            cellprob = st.number_input(
-                "Cellprob threshold",
-                value=float(st.session_state.get("cp_cellprob_threshold", -0.2)),
-                step=0.1,
-                key="cp_cellprob_threshold",
-                help="Higher -> fewer cells. Default -0.2",
-            )
-            flowthr = st.number_input(
-                "Flow threshold",
-                value=float(st.session_state.get("cp_flow_threshold", 0.4)),
-                step=0.1,
-                key="cp_flow_threshold",
-                help="Lower -> more permissive flows. Default 0.4",
-            )
-            min_size = st.number_input(
-                "Minimum size (pixels)",
-                value=int(st.session_state.get("cp_min_size", 0)),
-                min_value=0,
-                step=10,
-                key="cp_min_size",
-                help="Remove masks smaller than this area.",
+        # Diameter: auto (None) or manual
+        diam_mode = st.selectbox(
+            "Diameter mode",
+            ["Auto (None)", "Manual"],
+            index=(
+                0
+                if st.session_state.get("cp_diam_mode", "Auto (None)") == "Auto (None)"
+                else 1
+            ),
+            key="cp_diam_mode",
+            help="Leave as Auto for Cellpose to estimate diameter, or set a manual value.",
+        )
+        diam_val = None
+        if diam_mode == "Manual":
+            diam_val = st.number_input(
+                "Manual diameter (pixels)",
+                min_value=0.0,
+                value=float(st.session_state.get("cp_diameter", 0.0) or 0.0),
+                step=1.0,
+                key="cp_diameter",
             )
 
-            cols = st.columns([1, 1])
-            with cols[0]:
-                st.form_submit_button("Apply changes", use_container_width=True)
-            with cols[1]:
-                if st.form_submit_button("Reset defaults", use_container_width=True):
-                    _reset_cellpose_hparams_to_defaults()
+        # Thresholds & size
+        cellprob = st.number_input(
+            "Cellprob threshold",
+            value=float(st.session_state.get("cp_cellprob_threshold", -0.2)),
+            step=0.1,
+            key="cp_cellprob_threshold",
+            help="Higher -> fewer cells. Default -0.2",
+        )
+        flowthr = st.number_input(
+            "Flow threshold",
+            value=float(st.session_state.get("cp_flow_threshold", 0.4)),
+            step=0.1,
+            key="cp_flow_threshold",
+            help="Lower -> more permissive flows. Default 0.4",
+        )
+        min_size = st.number_input(
+            "Minimum size (pixels)",
+            value=int(st.session_state.get("cp_min_size", 0)),
+            min_value=0,
+            step=10,
+            key="cp_min_size",
+            help="Remove masks smaller than this area.",
+        )
 
-        # sync diameter to None when Auto selected
-        if st.session_state.get("cp_diam_mode", "Auto (None)") == "Auto (None)":
-            st.session_state["cp_diameter"] = None
+        cols = st.columns([1, 1])
+        with cols[0]:
+            st.form_submit_button("Apply changes", use_container_width=True)
+        with cols[1]:
+            if st.form_submit_button("Reset defaults", use_container_width=True):
+                _reset_cellpose_hparams_to_defaults()
+
+    # sync diameter to None when Auto selected
+    if st.session_state.get("cp_diam_mode", "Auto (None)") == "Auto (None)":
+        st.session_state["cp_diameter"] = None
 
 
 def box_tools_fragment(key_ns="side"):

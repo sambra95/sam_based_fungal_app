@@ -221,7 +221,7 @@ def _cellpose_options(key_ns="train_cellpose"):
     )
 
     if ss["cp_do_gridsearch"]:
-        with st.expander("Grid search options", expanded=True):
+        with st.popover("Grid search options"):
             st.caption("Provide comma-separated lists. Leave blank to use defaults.")
 
             # Defaults for the grid
