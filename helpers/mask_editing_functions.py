@@ -13,7 +13,7 @@ from streamlit_image_coordinates import streamlit_image_coordinates
 from helpers import config as cfg  # CKPT_PATH, CFG_PATH
 from helpers.state_ops import ordered_keys, current
 from helpers.classifying_functions import classes_map_from_labels, palette_from_emojis
-from helpers.cellpose_functions import segment_rec_with_cellpose
+from helpers.cellpose_functions import segment_rec_with_cellpose, normalize_image
 
 # -----------------------------------------------------#
 # --------------- MASK HELPERS SIDEBAR --------------- #
@@ -314,8 +314,11 @@ def nav_fragment(key_ns="side"):
     if c2.button("Next ▶", key=f"{key_ns}_next", use_container_width=True):
         set_current_by_index(rec_idx + 1)
         st.rerun()
-
-    st.toggle("Show mask overlay", key="show_overlay", value=True)
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        st.toggle("Show masks", key="show_overlay", value=True)
+    with col2:
+        st.toggle("Normalize image", key="show_normalized", value=False)
 
 
 @st.fragment
@@ -569,18 +572,24 @@ def _image_display(rec, scale):
 
 @st.fragment
 def display_and_interact_fragment(key_ns="edit", mode_ns="side", scale=1.5):
-
     rec = current()
     if rec is None:
         st.warning("Upload an image in **Upload data** first.")
         return
 
-    # ensure class defaults exist (safe if already set by sidebar)
     st.session_state.setdefault("all_classes", ["Remove label"])
     st.session_state.setdefault("side_current_class", "Remove label")
 
-    base_img, display_for_ui, disp_w, disp_h = _image_display(rec, scale)
-    mode = st.session_state.get(f"interaction_mode", "Draw box")
+    # --- show normalized image if toggled
+    rec_for_disp = rec
+    if st.session_state.get("show_normalized"):
+        im = normalize_image(rec["image"])
+        # create a place holder for the normalized image (avoids changing record)
+        rec_for_disp = dict(rec)
+        rec_for_disp["image"] = im
+
+    base_img, display_for_ui, disp_w, disp_h = _image_display(rec_for_disp, scale)
+    mode = st.session_state.get("interaction_mode", "Draw box")
 
     M = rec.get("masks")
     has_instances = isinstance(M, np.ndarray) and M.ndim == 2 and M.any()

@@ -5,6 +5,15 @@ import numpy as np
 import streamlit as st
 import cv2
 import matplotlib.pyplot as plt
+import io as IO
+from datetime import datetime
+import numpy as np
+import pandas as pd
+from PIL import Image
+import io
+from zipfile import ZipFile, ZIP_DEFLATED
+from datetime import datetime
+import pandas as pd
 
 from tensorflow.keras.utils import Sequence
 from tensorflow.keras import layers, models
@@ -462,18 +471,13 @@ def evaluate_fine_tinued_densenet(history, val_gen, classes):
         history.history.get("val_loss", []),
         metrics=metrics_dict,
     )
-
-    st.pyplot(fig, use_container_width=True)
-
     # plot confusion matrix on validation set
     cm = confusion_matrix(yv, y_pred, labels=np.arange(len(classes)))
     fig = _plot_confusion_matrix(cm, classes, normalize=False)
 
-    st.pyplot(fig, use_container_width=True)
-
 
 # -------------------------------
-#  Functions for plotting training metrics
+#  Functions visualizing and downloading training metrics
 # -------------------------------
 
 
@@ -578,3 +582,102 @@ def _plot_densenet_losses(train_losses, test_losses, metrics=None):
     _save_fig_to_session(fig, key_prefix=f"densenet_plot_losses", dpi=300)
 
     return fig
+
+
+def _array_to_png_bytes(arr: np.ndarray) -> bytes:
+    """Convert float/uint arrays to PNG bytes (3-channel)."""
+    a = arr
+    if a.ndim == 2:
+        a = np.repeat(a[..., None], 3, axis=2)
+    elif a.ndim == 3 and a.shape[2] > 3:
+        a = a[:, :, :3]
+
+    if a.dtype.kind == "f":  # float -> assume 0..1 or 0..255
+        a = np.clip(a, 0, 255)
+        if a.max() <= 1.0:
+            a = (a * 255.0).round()
+    a = np.clip(a, 0, 255).astype(np.uint8)
+
+    bio = io.BytesIO()
+    Image.fromarray(a).save(bio, format="PNG")
+    return bio.getvalue()
+
+
+def build_patchset_zip_from_session(patch_size: int = 64) -> bytes | None:
+    X, y, classes = load_labeled_patches_from_session(patch_size=patch_size)
+    if X.shape[0] == 0:
+        return None
+
+    buf, rows = IO.BytesIO(), []
+    ok = ordered_keys()
+    parent_names = [st.session_state["images"][k]["name"].rsplit(".", 1)[0] for k in ok]
+    patch_per_img = int(np.ceil(X.shape[0] / len(ok))) if ok else X.shape[0]
+
+    with ZipFile(buf, "w", ZIP_DEFLATED) as zf:
+        for i in range(X.shape[0]):
+            parent = parent_names[min(i // patch_per_img, len(parent_names) - 1)]
+            fname = f"{parent}_patch_{i+1:04d}.png"
+            label_idx = int(y[i])
+            label_name = (
+                classes[label_idx]
+                if 0 <= label_idx < len(classes)
+                else f"class{label_idx}"
+            )
+            zf.writestr(f"patches/{fname}", _array_to_png_bytes(X[i]))
+            rows.append(
+                {"filename": fname, "label_idx": label_idx, "label": label_name}
+            )
+        zf.writestr(
+            "labels.csv", pd.DataFrame(rows).to_csv(index=False).encode("utf-8")
+        )
+    return buf.getvalue()
+
+
+def download_densenet_training_record():
+    ss = st.session_state
+    psize = int(ss.get("dn_input_size", 64))
+    pzip = build_patchset_zip_from_session(psize)
+    if not pzip:
+        st.warning("No patches available.")
+        return
+
+    with ZipFile(IO.BytesIO(pzip)) as zin:
+        labels = pd.read_csv(IO.BytesIO(zin.read("labels.csv")))
+        params = dict(
+            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            input_size=psize,
+            epochs=int(ss.get("dn_max_epoch", 100)),
+            batch_size=int(ss.get("dn_batch_size", 32)),
+            val_split=float(ss.get("dn_val_split", 0.2)),
+            patches=len(labels),
+            classes=labels["label"].nunique(),
+        )
+
+        buf = IO.BytesIO()
+        with ZipFile(buf, "w", ZIP_DEFLATED) as zout:
+            if ss.get("densenet_model_bytes"):
+                zout.writestr("densenet_model.pt", ss["densenet_model_bytes"])
+            zout.writestr(
+                "params.csv",
+                pd.Series(params)
+                .rename_axis("parameter")
+                .reset_index(name="value")
+                .to_csv(index=False),
+            )
+            for n in zin.namelist():
+                zout.writestr(n, zin.read(n))
+            for k, p in [
+                ("densenet_plot_losses_png", "plots/densenet_losses.png"),
+                ("densenet_plot_confusion_png", "plots/densenet_confusion.png"),
+            ]:
+                if k in ss:
+                    zout.writestr(p, ss[k])
+
+    st.download_button(
+        "Download DenseNet model, dataset and training metrics (ZIP)",
+        data=buf.getvalue(),
+        file_name=f"densenet_training_{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip",
+        mime="application/zip",
+        use_container_width=True,
+        type="primary",
+    )

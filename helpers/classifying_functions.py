@@ -265,7 +265,7 @@ def classify_actions_fragment():
     st.button(
         "Classify this image with DenseNet-121",
         use_container_width=True,
-        on_click=lambda: _classify_one_and_refresh(rec),
+        on_click=lambda: classify_cells_with_densenet(rec),
     )
 
     st.button(
@@ -274,13 +274,6 @@ def classify_actions_fragment():
         use_container_width=True,
         on_click=_batch_classify_and_refresh,
     )
-
-
-def _classify_one_and_refresh(rec):
-    """classify masks in the current image"""
-    if rec is not None:
-        classify_cells_with_densenet(rec)
-    st.rerun()
 
 
 def _batch_classify_and_refresh():

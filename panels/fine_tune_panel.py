@@ -15,12 +15,15 @@ from helpers.densenet_functions import (
     load_labeled_patches_from_session,
     fine_tune_densenet,
     evaluate_fine_tinued_densenet,
+    download_densenet_training_record,
 )
 from helpers.cellpose_functions import (
     finetune_cellpose_from_records,
     _plot_losses,
     compare_models_mean_iou_plot,
+    download_cellpose_training_record,
 )
+
 
 ss = st.session_state
 
@@ -29,44 +32,41 @@ ss = st.session_state
 
 
 def _densenet_options(key_ns="train_densenet"):
-    """Light controls – lives outside fragments so changing options refreshes summary."""
-    st.header("Train DenseNet on labeled cell patches")
+    """Light controls - lives outside fragments so changing options refreshes summary."""
+    st.header("Fine-tune a DenseNet classifier")
 
     if not ordered_keys():
         st.info("Upload data and add labels in the other panels first.")
         return False
 
-    with st.expander("Training options", expanded=True):
-        c1, c2, c3, c4 = st.columns(4)
-        ss.setdefault("dn_input_size", 64)
-        ss.setdefault("dn_batch_size", 32)
-        ss.setdefault("dn_max_epoch", 100)
-        ss.setdefault("dn_val_split", 0.2)
+    # show information about the training set
+    densenet_summary_fragment()
 
-        ss["dn_input_size"] = c1.selectbox(
-            "Input size",
-            options=[64, 96, 128],
-            index=[64, 96, 128].index(ss["dn_input_size"]),
-        )
-        ss["dn_batch_size"] = c2.selectbox(
-            "Batch size",
-            options=[8, 16, 32, 64],
-            index=[8, 16, 32, 64].index(ss["dn_batch_size"]),
-        )
+    c1, c2, c4 = st.columns(3)
+    ss.setdefault("dn_input_size", 64)
+    ss.setdefault("dn_batch_size", 32)
+    ss.setdefault("dn_max_epoch", 100)
+    ss.setdefault("dn_val_split", 0.2)
 
-        ss["dn_max_epoch"] = c4.number_input(
-            "Max epochs",
-            min_value=1,
-            max_value=500,
-            value=int(ss["dn_max_epoch"]),
-            step=5,
-            key="max_epoch_densenet_ui",
-        )
+    ss["dn_input_size"] = c1.selectbox(
+        "Input size",
+        options=[64, 96, 128],
+        index=[64, 96, 128].index(ss["dn_input_size"]),
+    )
+    ss["dn_batch_size"] = c2.selectbox(
+        "Batch size",
+        options=[8, 16, 32, 64],
+        index=[8, 16, 32, 64].index(ss["dn_batch_size"]),
+    )
 
-        ss["dn_val_split"] = st.slider(
-            "Validation split", 0.05, 0.4, float(ss["dn_val_split"]), 0.05
-        )
-
+    ss["dn_max_epoch"] = c4.number_input(
+        "Max epochs",
+        min_value=1,
+        max_value=500,
+        value=int(ss["dn_max_epoch"]),
+        step=5,
+        key="max_epoch_densenet_ui",
+    )
     return True
 
 
@@ -82,8 +82,19 @@ def densenet_summary_fragment():
     counts = np.bincount(y, minlength=len(classes))
     freq_df = pd.DataFrame({"Class": list(classes), "Count": counts.astype(int)})
 
-    st.write(f"Found {int(counts.sum())} patches across {len(classes)} classes.")
-    st.table(freq_df)
+    st.info(
+        f"Training set: {int(counts.sum())} labelled cells across {len(classes)} classes."
+    )
+    # --- Pretty, form-like card with rounded edges ---
+    st.dataframe(
+        freq_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Class": st.column_config.TextColumn("Class"),
+            "Count": st.column_config.NumberColumn("Count", format="%d"),
+        },
+    )
 
 
 @st.fragment
@@ -97,7 +108,7 @@ def densenet_train_fragment():
     input_size = int(ss.get("dn_input_size", 64))
     batch_size = int(ss.get("dn_batch_size", 32))
     epochs = int(ss.get("dn_max_epoch", 100))
-    val_split = float(ss.get("dn_val_split", 0.2))
+    val_split = 0.2
 
     # fine tune the densenet model
     history, val_gen, classes = fine_tune_densenet(
@@ -111,54 +122,96 @@ def densenet_train_fragment():
 def render_densenet_train_panel(key_ns: str = "train_densenet"):
     if not _densenet_options(key_ns):
         return
-    densenet_summary_fragment()
     densenet_train_fragment()
+
+
+def show_densenet_training_plots(height: int = 600):
+    """Render saved DenseNet training plots from session state (if available)."""
+    k1, k2 = "densenet_plot_losses_png", "densenet_plot_confusion_png"
+    with st.container(border=True, height=height):
+        if (k1 not in st.session_state) and (k2 not in st.session_state):
+            st.empty()
+            return
+        st.header("DenseNet Training Plots")
+
+        # button to download fine-tuned model, training data and training stats
+        download_densenet_training_record()
+
+        if k1 in st.session_state:
+            st.image(
+                st.session_state[k1],
+                use_container_width=True,
+            )
+        else:
+            st.empty()
+        if k2 in st.session_state:
+            st.image(
+                st.session_state[k2],
+                use_container_width=True,
+            )
+        else:
+            st.empty()
 
 
 # ========== Cellpose: options + training ==========
 
 
 def _cellpose_options(key_ns="train_cellpose"):
-    st.header("Fine-tune Cellpose on your labeled data")
+    st.header("Fine-tune a Cellpose segmenter")
 
     if not ordered_keys():
         st.info("Upload data and label masks first.")
         return False
 
-    with st.expander("Training options", expanded=True):
-        c1, c2, c3, c4 = st.columns(4)
+    # --- show dataset stats ---
+    def is_mask(m):
+        return isinstance(m, np.ndarray) and m.ndim == 2 and m.any()
 
-        # Defaults
-        ss.setdefault("cp_base_model", "cyto2")
-        ss.setdefault("cp_max_epoch", 100)
-        ss.setdefault("cp_lr", 5e-5)
-        ss.setdefault("cp_wd", 0.1)
-        ss.setdefault("cp_nimg", 32)
+    n_images, n_masks = len(ordered_keys()), 0
+    for k in ordered_keys():
+        rec = st.session_state["images"][k]
+        m = rec["masks"]
+        has = is_mask(m)
+        n = int(len(np.unique(m)) - 1) if has else 0
+        n_masks += n
+    st.info(f"Training set: {n_masks} cell masks across {n_images} images.")
 
-        ss["cp_base_model"] = c1.selectbox(
-            "Base model",
-            options=["cyto2", "cyto", "nuclei", "scratch"],
-            index=["cyto2", "cyto", "nuclei", "scratch"].index(ss["cp_base_model"]),
-        )
-        ss["cp_max_epoch"] = c2.number_input(
-            "Max epochs", 1, 500, int(ss["cp_max_epoch"]), step=5
-        )
-        ss["cp_lr"] = c3.number_input(
-            "Learning rate",
-            min_value=1e-6,
-            max_value=1e-2,
-            value=float(ss["cp_lr"]),
-            format="%.5f",
-        )
-        ss["cp_wd"] = c4.number_input(
-            "Weight decay",
-            min_value=0.0,
-            max_value=1.0,
-            value=float(ss["cp_wd"]),
-            step=0.05,
-        )
+    # --- show training options ---
+    c1, c2, c3, c4 = st.columns(4)
 
-        ss["cp_nimg"] = st.slider("Images per epoch", 1, 128, int(ss["cp_nimg"]), 1)
+    # Defaults
+    ss.setdefault("cp_base_model", "cyto2")
+    ss.setdefault("cp_max_epoch", 100)
+    ss.setdefault("cp_lr", 5e-5)
+    ss.setdefault("cp_wd", 0.1)
+    ss.setdefault("cp_nimg", 32)
+
+    ss["cp_base_model"] = c1.selectbox(
+        "Base model",
+        options=["cyto2", "cyto", "nuclei", "scratch"],
+        index=["cyto2", "cyto", "nuclei", "scratch"].index(ss["cp_base_model"]),
+    )
+    ss["cp_max_epoch"] = c2.number_input(
+        "Max epochs", 1, 500, int(ss["cp_max_epoch"]), step=5
+    )
+    ss["cp_lr"] = c3.number_input(
+        "Learning rate",
+        min_value=1e-8,
+        max_value=1.0,
+        value=float(ss["cp_lr"]),
+        format="%.5f",
+    )
+    ss["cp_wd"] = c4.number_input(
+        "Weight decay",
+        min_value=0.0,
+        max_value=1.0,
+        value=float(ss["cp_wd"]),
+        step=1e-6,
+        format="%.8f",  # more decimals prevents snapping to 0
+        key="cp_wd_input",
+    )
+
+    ss["cp_nimg"] = st.slider("Images per epoch", 1, 128, int(ss["cp_nimg"]), 1)
 
     # --- Hyperparameter tuning toggle + grid inputs ---
     ss.setdefault("cp_do_gridsearch", False)
@@ -201,7 +254,7 @@ def _cellpose_options(key_ns="train_cellpose"):
 
 @st.fragment
 def cellpose_train_fragment():
-    go = st.button("Fine tune Cellpose", use_container_width=True, type="primary")
+    go = st.button("Fine-tune Cellpose", use_container_width=True, type="primary")
     if not go:
         return
 
@@ -369,6 +422,34 @@ def cellpose_train_fragment():
         masks,
         base_model_name=base_model if base_model != "scratch" else "cyto2",
     )
+
+
+def show_cellpose_training_plots(height: int = 600):
+    """Render saved Cellpose plots from session state (if available)."""
+    k1, k2 = "cp_losses_png", "cp_compare_iou_png"
+    with st.container(border=True, height=height):
+        if (k1 not in st.session_state) and (k2 not in st.session_state):
+            st.empty()
+            return
+        st.header("Cellpose Training plots")
+
+        # button for downloading fine-tuned model, training data and training stats in a zip file
+        download_cellpose_training_record()
+
+        if k1 in st.session_state:
+            st.image(
+                st.session_state[k1],
+                use_container_width=True,
+            )
+        else:
+            st.info("No fine-tuning data to show.")
+        if k2 in st.session_state:
+            st.image(
+                st.session_state[k2],
+                use_container_width=True,
+            )
+        else:
+            st.info("No fine-tuning data to show.")
 
 
 def render_cellpose_train_panel(key_ns="train_cellpose"):
