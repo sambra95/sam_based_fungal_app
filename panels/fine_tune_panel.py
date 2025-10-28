@@ -22,6 +22,7 @@ from helpers.cellpose_functions import (
     compare_models_mean_iou_plot,
 )
 
+
 ss = st.session_state
 
 
@@ -124,13 +125,17 @@ def _cellpose_options(key_ns="train_cellpose"):
         return False
 
     # --- show dataset stats ---
+    def is_mask(m):
+        return isinstance(m, np.ndarray) and m.ndim == 2 and m.any()
+
     n_images, n_masks = len(ordered_keys()), 0
     for k in ordered_keys():
         rec = st.session_state["images"][k]
-        M = rec.get("masks")
-        if isinstance(M, np.ndarray) and M.ndim == 2:
-            n_masks += int((M > 0).sum() > 0)  # count one mask per instance
-    st.info(f"Training set: {n_masks} labeled masks across {n_images} images.")
+        m = rec["masks"]
+        has = is_mask(m)
+        n = int(len(np.unique(m)) - 1) if has else 0
+        n_masks += n
+    st.info(f"Training set: {n_masks} cell masks across {n_images} images.")
 
     # --- show training options ---
     c1, c2, c3, c4 = st.columns(4)
