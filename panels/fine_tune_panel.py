@@ -83,7 +83,16 @@ def densenet_summary_fragment():
     st.info(
         f"Training set: {int(counts.sum())} labelled cells across {len(classes)} classes."
     )
-    st.table(freq_df)
+    # --- Pretty, form-like card with rounded edges ---
+    st.dataframe(
+        freq_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Class": st.column_config.TextColumn("Class"),
+            "Count": st.column_config.NumberColumn("Count", format="%d"),
+        },
+    )
 
 
 @st.fragment
