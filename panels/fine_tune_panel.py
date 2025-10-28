@@ -114,6 +114,30 @@ def render_densenet_train_panel(key_ns: str = "train_densenet"):
     densenet_train_fragment()
 
 
+def show_densenet_training_plots(height: int = 600):
+    """Render saved DenseNet training plots from session state (if available)."""
+    k1, k2 = "densenet_plot_losses_png", "densenet_plot_confusion_png"
+    with st.container(border=True, height=height):
+        if (k1 not in st.session_state) and (k2 not in st.session_state):
+            st.empty()
+            return
+        st.header("DenseNet Training Plots")
+        if k1 in st.session_state:
+            st.image(
+                st.session_state[k1],
+                use_container_width=True,
+            )
+        else:
+            st.empty()
+        if k2 in st.session_state:
+            st.image(
+                st.session_state[k2],
+                use_container_width=True,
+            )
+        else:
+            st.empty()
+
+
 # ========== Cellpose: options + training ==========
 
 
@@ -383,6 +407,30 @@ def cellpose_train_fragment():
         masks,
         base_model_name=base_model if base_model != "scratch" else "cyto2",
     )
+
+
+def show_cellpose_training_plots(height: int = 600):
+    """Render saved Cellpose plots from session state (if available)."""
+    k1, k2 = "cp_losses_png", "cp_compare_iou_png"
+    with st.container(border=True, height=height):
+        if (k1 not in st.session_state) and (k2 not in st.session_state):
+            st.empty()
+            return
+        st.header("Cellpose Training plots")
+        if k1 in st.session_state:
+            st.image(
+                st.session_state[k1],
+                use_container_width=True,
+            )
+        else:
+            st.info("No fine-tuning data to show.")
+        if k2 in st.session_state:
+            st.image(
+                st.session_state[k2],
+                use_container_width=True,
+            )
+        else:
+            st.info("No fine-tuning data to show.")
 
 
 def render_cellpose_train_panel(key_ns="train_cellpose"):
