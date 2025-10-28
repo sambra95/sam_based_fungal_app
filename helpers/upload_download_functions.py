@@ -202,25 +202,6 @@ def _build_cell_metrics_zip(labels_selected):
     return build_plots_zip(items) if items else b""
 
 
-def _array_to_png_bytes(arr: np.ndarray) -> bytes:
-    """Convert float/uint arrays to PNG bytes (3-channel)."""
-    a = arr
-    if a.ndim == 2:
-        a = np.repeat(a[..., None], 3, axis=2)
-    elif a.ndim == 3 and a.shape[2] > 3:
-        a = a[:, :, :3]
-
-    if a.dtype.kind == "f":  # float -> assume 0..1 or 0..255
-        a = np.clip(a, 0, 255)
-        if a.max() <= 1.0:
-            a = (a * 255.0).round()
-    a = np.clip(a, 0, 255).astype(np.uint8)
-
-    bio = io.BytesIO()
-    Image.fromarray(a).save(bio, format="PNG")
-    return bio.getvalue()
-
-
 def build_densenet_artifacts_zip() -> bytes | None:
     """
     Build a ZIP containing DenseNet artifacts found in session_state:

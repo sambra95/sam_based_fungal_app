@@ -15,11 +15,13 @@ from helpers.densenet_functions import (
     load_labeled_patches_from_session,
     fine_tune_densenet,
     evaluate_fine_tinued_densenet,
+    download_densenet_training_record,
 )
 from helpers.cellpose_functions import (
     finetune_cellpose_from_records,
     _plot_losses,
     compare_models_mean_iou_plot,
+    download_cellpose_training_record,
 )
 
 
@@ -131,6 +133,10 @@ def show_densenet_training_plots(height: int = 600):
             st.empty()
             return
         st.header("DenseNet Training Plots")
+
+        # button to download fine-tuned model, training data and training stats
+        download_densenet_training_record()
+
         if k1 in st.session_state:
             st.image(
                 st.session_state[k1],
@@ -426,6 +432,10 @@ def show_cellpose_training_plots(height: int = 600):
             st.empty()
             return
         st.header("Cellpose Training plots")
+
+        # button for downloading fine-tuned model, training data and training stats in a zip file
+        download_cellpose_training_record()
+
         if k1 in st.session_state:
             st.image(
                 st.session_state[k1],

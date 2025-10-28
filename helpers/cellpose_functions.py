@@ -9,6 +9,10 @@ import io as IO
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_absolute_error
+import zipfile
+from datetime import datetime
+import pandas as pd
+from helpers.state_ops import ordered_keys
 
 # -----------------------------------------------------#
 # ---------------- IMAGE PREPROCESSING --------------- #
@@ -401,3 +405,66 @@ def finetune_cellpose_from_records(
     st.session_state["model_to_fine_tune"] = base_model
 
     return train_losses, test_losses, model_name
+
+
+def download_cellpose_training_record():
+    ss, ok = st.session_state, ordered_keys()
+    n_masks = sum(
+        (
+            int(np.max(m))
+            if (
+                isinstance(m := ss["images"][k].get("masks"), np.ndarray)
+                and m.ndim == 2
+                and m.size
+            )
+            else 0
+        )
+        for k in ok
+    )
+    params = dict(
+        timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        base_model=ss.get("cp_base_model", "cyto2"),
+        epochs=int(ss.get("cp_max_epoch", 100)),
+        learning_rate=float(ss.get("cp_lr", 5e-5)),
+        weight_decay=float(ss.get("cp_wd", 0.1)),
+        batch_size=int(ss.get("cp_batch_size", 1)),
+        images_used=len(ok),
+        masks_used=n_masks,
+    )
+
+    buf = IO.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        if ss.get("cellpose_model_bytes"):
+            z.writestr("cellpose_model.pt", ss["cellpose_model_bytes"])
+        z.writestr(
+            "params.csv",
+            pd.Series(params)
+            .rename_axis("parameter")
+            .reset_index(name="value")
+            .to_csv(index=False),
+        )
+        for k in ok:
+            r = ss["images"][k]
+            img = np.asarray(r["image"])
+            if img.dtype != np.uint8:
+                img = np.clip(img, 0, 255).astype(np.uint8)
+            b = IO.BytesIO()
+            Image.fromarray(img).save(b, "TIFF")
+            name = r.get("name", f"{k}.tif")
+            name = name if name.lower().endswith(".tif") else f"{name}.tif"
+            z.writestr(f"images/{name}", b.getvalue())
+        for k, p in [
+            ("cp_losses_png", "plots/cp_losses.png"),
+            ("cp_compare_iou_png", "plots/cp_compare_iou.png"),
+        ]:
+            if k in ss:
+                z.writestr(p, ss[k])
+
+    st.download_button(
+        "Download Cellpose model, dataset and training metrics (ZIP)",
+        data=buf.getvalue(),
+        file_name=f"cellpose_training_{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip",
+        mime="application/zip",
+        use_container_width=True,
+        type="primary",
+    )
