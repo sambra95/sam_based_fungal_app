@@ -26,6 +26,7 @@ def render_main():
                 type=["tif", "tiff", "npy", "png", "jpg", "jpeg"],
                 accept_multiple_files=True,
                 key=up_key,
+                help="Unrecognised mask formats or extensions or masks without a paired image will be ignored.",
             )
 
             # 👇 allow user to specify mask suffix (default "_masks")
@@ -47,14 +48,20 @@ def render_main():
             cellpose_file = st.file_uploader(
                 " ",
                 # Cellpose custom models are commonly .npy; allow pt/pth just in case
-                type=["npy", "pt", "pth"],
+                type=["pt", "pth"],
                 key="upload_cellpose_model",
+                help="Uploading a Cellpose model is optional.",
             )
             if cellpose_file is not None:
                 ss["cellpose_model_bytes"] = cellpose_file.read()
                 ss["cellpose_model_name"] = cellpose_file.name
                 st.success(f"Loaded Cellpose model: {cellpose_file.name}")
 
+            # display the currently loaded model
+            cellpose_model = ss.get("cellpose_model_name") or "—"
+            st.info(f"Loaded model: {cellpose_model}")
+
+            # button to remove the currently loaded model
             if st.button("Clear Cellpose model", use_container_width=True):
                 ss["cellpose_model_bytes"] = None
                 ss["cellpose_model_name"] = None
@@ -71,6 +78,7 @@ def render_main():
                     "keras",
                 ],  # Keras formats only; torch files won't work with load_model
                 key="upload_densenet_ckpt",
+                help="Uploading a Densenet121 model is optional.",
             )
             if densenet_file is not None:
                 from tensorflow.keras.models import load_model, Model
@@ -94,25 +102,17 @@ def render_main():
                 ss["densenet_ckpt_name"] = densenet_file.name
                 st.success(f"Loaded DenseNet-121 classifier: {densenet_file.name}")
 
-            if st.button("Clear DenseNet-121", use_container_width=True):
+            # display the currently loaded model
+            densenet_model = ss.get("densenet_ckpt_name") or "—"
+            st.info(f"Loaded model: {densenet_model}")
+
+            # button to remove the currently loaded model
+            if st.button("Clear DenseNet-121 model", use_container_width=True):
                 ss["densenet_ckpt_bytes"] = None
                 ss["densenet_ckpt_name"] = None
 
-    # ---------- RIGHT: model uploads (persist in session_state) ----------
     # ---- Status panel ----
     st.divider()
-
-    st.header("**Uploaded Models and Images**")
-
-    # Grab session state (short alias)
-    ss = st.session_state
-
-    # Prepare model info HTML
-    cellpose_model = ss.get("cellpose_model_name") or "—"
-    densenet_model = ss.get("densenet_ckpt_name") or "—"
-
-    st.info(f"Cellpose model: {cellpose_model}")
-    st.info(f"Densenet model: {densenet_model}")
 
     # ---- Summary table: image–mask pairs ----
     num_images = len(st.session_state["images"].keys())

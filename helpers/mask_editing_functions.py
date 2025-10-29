@@ -119,6 +119,7 @@ def _read_cellpose_hparams_from_state():
         cellprob_threshold=float(st.session_state.get("cp_cellprob_threshold", -0.2)),
         flow_threshold=float(st.session_state.get("cp_flow_threshold", 0.4)),
         min_size=int(st.session_state.get("cp_min_size", 0)),
+        niter=int(st.session_state.get("niter", 0)),
     )
 
 
@@ -296,117 +297,93 @@ def set_current_by_index(idx: int):
     st.session_state.current_key = ok[idx % len(ok)]
 
 
-def nav_fragment(key_ns="side"):
-    ok = ordered_keys()
-    if not ok:
-        st.warning("Upload an image in **Upload data** first.")
-        return
-
-    names = [st.session_state.images[k]["name"] for k in ok]
-    reck = st.session_state.current_key
-    rec_idx = ok.index(reck) if reck in ok else 0
-    st.markdown(f"**Image {rec_idx+1}/{len(ok)}:** {names[rec_idx]}")
-
-    c1, c2 = st.columns(2)
-    if c1.button("◀ Prev", key=f"{key_ns}_prev", use_container_width=True):
-        set_current_by_index(rec_idx - 1)
-        st.rerun()
-    if c2.button("Next ▶", key=f"{key_ns}_next", use_container_width=True):
-        set_current_by_index(rec_idx + 1)
-        st.rerun()
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        st.toggle("Show masks", key="show_overlay", value=True)
-    with col2:
-        st.toggle("Normalize image", key="show_normalized", value=False)
-
-
 @st.fragment
-def cellpose_actions_fragment():
-    # --- Hyperparameters (collapsible) ---
-    with st.expander("Segment cells with Cellpose", expanded=False):
+def cellpose_hyperparameters_fragment():
 
-        if st.button("Segment image with Cellpose", use_container_width=True):
-            _segment_current_and_refresh()
+    # We use a small form so changing values doesn't trigger reruns mid-typing
+    with st.form("cellpose_hparams_form", clear_on_submit=False):
+        # Channels (two ints)
+        st.number_input(
+            "Channel 1",
+            value=st.session_state.get("cp_ch1", 0),
+            step=1,
+            format="%d",
+            key="cp_ch1",
+        )
+        st.number_input(
+            "Channel 2",
+            value=st.session_state.get("cp_ch2", 0),
+            step=1,
+            format="%d",
+            key="cp_ch2",
+        )
 
-        if st.button("Segment all images with Cellpose", use_container_width=True):
-            _batch_segment_and_refresh()
-
-        # We use a small form so changing values doesn't trigger reruns mid-typing
-        with st.form("cellpose_hparams_form", clear_on_submit=False):
-            # Channels (two ints)
-            st.number_input(
-                "Channel 1",
-                value=st.session_state.get("cp_ch1", 0),
-                step=1,
-                format="%d",
-                key="cp_ch1",
-            )
-            st.number_input(
-                "Channel 2",
-                value=st.session_state.get("cp_ch2", 0),
-                step=1,
-                format="%d",
-                key="cp_ch2",
-            )
-
-            # Diameter: auto (None) or manual
-            diam_mode = st.selectbox(
-                "Diameter mode",
-                ["Auto (None)", "Manual"],
-                index=(
-                    0
-                    if st.session_state.get("cp_diam_mode", "Auto (None)")
-                    == "Auto (None)"
-                    else 1
-                ),
-                key="cp_diam_mode",
-                help="Leave as Auto for Cellpose to estimate diameter, or set a manual value.",
-            )
-            diam_val = None
-            if diam_mode == "Manual":
-                diam_val = st.number_input(
-                    "Manual diameter (pixels)",
-                    min_value=0.0,
-                    value=float(st.session_state.get("cp_diameter", 0.0) or 0.0),
-                    step=1.0,
-                    key="cp_diameter",
-                )
-
-            # Thresholds & size
-            cellprob = st.number_input(
-                "Cellprob threshold",
-                value=float(st.session_state.get("cp_cellprob_threshold", -0.2)),
-                step=0.1,
-                key="cp_cellprob_threshold",
-                help="Higher -> fewer cells. Default -0.2",
-            )
-            flowthr = st.number_input(
-                "Flow threshold",
-                value=float(st.session_state.get("cp_flow_threshold", 0.4)),
-                step=0.1,
-                key="cp_flow_threshold",
-                help="Lower -> more permissive flows. Default 0.4",
-            )
-            min_size = st.number_input(
-                "Minimum size (pixels)",
-                value=int(st.session_state.get("cp_min_size", 0)),
-                min_value=0,
-                step=10,
-                key="cp_min_size",
-                help="Remove masks smaller than this area.",
+        # Diameter: auto (None) or manual
+        diam_mode = st.selectbox(
+            "Diameter mode",
+            ["Auto (None)", "Manual"],
+            index=(
+                0
+                if st.session_state.get("cp_diam_mode", "Auto (None)") == "Auto (None)"
+                else 1
+            ),
+            key="cp_diam_mode",
+            help="Leave as Auto for Cellpose to estimate diameter, or set a manual value.",
+        )
+        diam_val = None
+        if diam_mode == "Manual":
+            diam_val = st.number_input(
+                "Manual diameter (pixels)",
+                min_value=0.0,
+                value=float(st.session_state.get("cp_diameter", 0.0) or 0.0),
+                step=1.0,
+                key="cp_diameter",
             )
 
-            cols = st.columns([1, 1])
-            with cols[0]:
-                st.form_submit_button("Apply changes", use_container_width=True)
-            with cols[1]:
-                if st.form_submit_button("Reset defaults", use_container_width=True):
-                    _reset_cellpose_hparams_to_defaults()
+        # Thresholds & size
+        cellprob = st.number_input(
+            "Cellprob threshold",
+            value=float(st.session_state.get("cp_cellprob_threshold", -0.2)),
+            step=0.1,
+            key="cp_cellprob_threshold",
+            help="Higher -> fewer cells. Default -0.2",
+        )
+        flowthr = st.number_input(
+            "Flow threshold",
+            value=float(st.session_state.get("cp_flow_threshold", 0.4)),
+            step=0.1,
+            key="cp_flow_threshold",
+            help="Lower -> more permissive flows. Default 0.4",
+        )
+        min_size = st.number_input(
+            "Minimum size (pixels)",
+            value=int(st.session_state.get("cp_min_size", 0)),
+            min_value=0,
+            step=10,
+            key="cp_min_size",
+            help="Remove masks smaller than this area.",
+        )
 
-        # sync diameter to None when Auto selected
-        if st.session_state.get("cp_diam_mode", "Auto (None)") == "Auto (None)":
-            st.session_state["cp_diameter"] = None
+        niter = st.number_input(
+            "Niter",
+            value=int(st.session_state.get("niter", 0)),
+            min_value=0,
+            max_value=1000,
+            step=10,
+            key="cp_niter",
+            help="Higher values favour longer, stringier, cells.",
+        )
+
+        cols = st.columns([1, 1])
+        with cols[0]:
+            st.form_submit_button("Apply changes", use_container_width=True)
+        with cols[1]:
+            if st.form_submit_button("Reset defaults", use_container_width=True):
+                _reset_cellpose_hparams_to_defaults()
+
+    # sync diameter to None when Auto selected
+    if st.session_state.get("cp_diam_mode", "Auto (None)") == "Auto (None)":
+        st.session_state["cp_diameter"] = None
 
 
 def box_tools_fragment(key_ns="side"):
@@ -553,7 +530,7 @@ def _image_display(rec, scale):
     has_instances = isinstance(M, np.ndarray) and M.ndim == 2 and M.any()
 
     if st.session_state.get("show_overlay", False) and has_instances:
-        labels = st.session_state.setdefault("all_classes", ["Remove label"])
+        labels = st.session_state.setdefault("all_classes", ["No label"])
         palette = palette_from_emojis(labels)
         classes_map = classes_map_from_labels(rec["masks"], rec["labels"])
         base_img = composite_over_by_class(
@@ -571,207 +548,253 @@ def _image_display(rec, scale):
 
 
 @st.fragment
-def display_and_interact_fragment(key_ns="edit", mode_ns="side", scale=1.5):
+def display_and_interact_fragment(key_ns="edit", scale=1.5):
     rec = current()
     if rec is None:
         st.warning("Upload an image in **Upload data** first.")
         return
 
-    st.session_state.setdefault("all_classes", ["Remove label"])
-    st.session_state.setdefault("side_current_class", "Remove label")
+    st.session_state.setdefault("all_classes", ["No label"])
+    st.session_state.setdefault("side_current_class", "No label")
 
-    # --- show normalized image if toggled
-    rec_for_disp = rec
-    if st.session_state.get("show_normalized"):
-        im = normalize_image(rec["image"])
-        # create a place holder for the normalized image (avoids changing record)
-        rec_for_disp = dict(rec)
-        rec_for_disp["image"] = im
+    # --- header: title + controls (Prev / Next / toggles) ---
+    ok = ordered_keys()
+    names = [st.session_state.images[k]["name"] for k in ok]
+    reck = st.session_state.current_key
+    rec_idx = ok.index(reck) if reck in ok else 0
 
-    base_img, display_for_ui, disp_w, disp_h = _image_display(rec_for_disp, scale)
-    mode = st.session_state.get("interaction_mode", "Draw box")
+    c1, c2, c3 = st.columns([1, 4, 1])
+    with c1:
+        st.markdown(
+            "<br><br><br>", unsafe_allow_html=True
+        )  # filler to move buttons further down the screen
+        if st.button(
+            "◀ Prev",
+            key=f"{key_ns}_prev_main",
+            use_container_width=True,
+        ):
+            set_current_by_index(rec_idx - 1)
+            st.rerun(scope="fragment")
+        st.markdown("<br>", unsafe_allow_html=True)  # filler
 
-    M = rec.get("masks")
-    has_instances = isinstance(M, np.ndarray) and M.ndim == 2 and M.any()
+        st.toggle("Show masks", key="show_overlay", value=True)
+        st.toggle("Normalize image", key="show_normalized", value=False)
+    with c2:
+        st.info(f"**Image {rec_idx+1}/{len(ok)}:** {names[rec_idx]}")
 
-    # ---- Draw mask
-    if mode == "Draw mask":
-        bg = Image.fromarray(display_for_ui).convert("RGBA")
-        canvas_result = st_canvas(
-            fill_color="rgba(0, 0, 255, 0.30)",
-            stroke_width=2,
-            stroke_color="white",
-            background_color="white",
-            background_image=bg,
-            update_streamlit=True,
-            width=disp_w,
-            height=disp_h,
-            drawing_mode="freedraw",  # new arguement
-            point_display_radius=3,
-            initial_drawing=None,
-            key=f"{key_ns}_canvas_edit_{st.session_state['edit_canvas_nonce']}",
+        jump = st.slider(
+            "Image index",
+            1,
+            len(ok),
+            rec_idx + 1,
+            key=f"{key_ns}_jump",
+            label_visibility="collapsed",
         )
-        if canvas_result.json_data:
-            added_any = False
-            for obj in canvas_result.json_data.get("objects", []):
-                if obj.get("type") not in ("path", "polygon"):  # guard
-                    continue
-                # 1) display-size mask
-                mask_disp = polygon_to_mask(obj, disp_h, disp_w).astype(np.uint16)
-                # 2) back to full res
-                mask_full = (
-                    np.array(
-                        Image.fromarray(mask_disp).resize(
-                            (rec["W"], rec["H"]), Image.NEAREST
-                        ),
-                        dtype=np.uint16,
+        if (jump - 1) != rec_idx:
+            set_current_by_index(jump - 1)
+            st.rerun()
+
+        # --- show normalized image if toggled (display only)
+        rec_for_disp = rec
+        if st.session_state.get("show_normalized"):
+            im = normalize_image(rec["image"])
+            rec_for_disp = dict(rec)
+            rec_for_disp["image"] = im
+
+        base_img, display_for_ui, disp_w, disp_h = _image_display(rec_for_disp, scale)
+        mode = st.session_state.get("interaction_mode", "Draw box")
+
+        M = rec.get("masks")
+        has_instances = isinstance(M, np.ndarray) and M.ndim == 2 and M.any()
+
+        # ---- Draw mask
+        if mode == "Draw mask":
+            bg = Image.fromarray(display_for_ui).convert("RGBA")
+            canvas_result = st_canvas(
+                fill_color="rgba(0, 0, 255, 0.30)",
+                stroke_width=2,
+                stroke_color="white",
+                background_color="white",
+                background_image=bg,
+                update_streamlit=True,
+                width=disp_w,
+                height=disp_h,
+                drawing_mode="freedraw",
+                point_display_radius=3,
+                initial_drawing=None,
+                key=f"{key_ns}_canvas_edit_{st.session_state['edit_canvas_nonce']}",
+            )
+            if canvas_result.json_data:
+                added_any = False
+                for obj in canvas_result.json_data.get("objects", []):
+                    if obj.get("type") not in ("path", "polygon"):
+                        continue
+                    mask_disp = polygon_to_mask(obj, disp_h, disp_w).astype(np.uint16)
+                    mask_full = (
+                        np.array(
+                            Image.fromarray(mask_disp).resize(
+                                (rec["W"], rec["H"]), Image.NEAREST
+                            ),
+                            dtype=np.uint16,
+                        )
+                        > 0
                     )
-                    > 0
-                )
-                inst, new_id = integrate_new_mask(rec["masks"], mask_full)
-                if new_id is not None:
-                    rec["masks"] = inst
-                    rec.setdefault("labels", {})[int(new_id)] = rec["labels"].get(
-                        int(new_id), None
-                    )
-                    added_any = True
-            if added_any:
-                st.session_state["edit_canvas_nonce"] += 1
-                st.rerun(scope="fragment")
-
-    # click and hold to draw boxes on the image
-    elif mode == "Draw box":
-        bg = Image.fromarray(display_for_ui).convert("RGB")
-        initial_json = boxes_to_fabric_rects(rec["boxes"], scale=scale)
-        num_initial = len(initial_json.get("objects", []))
-        canvas_result = st_canvas(
-            fill_color="rgba(0, 0, 255, 0.25)",
-            stroke_width=2,
-            stroke_color="white",
-            background_color="white",
-            background_image=bg,
-            update_streamlit=True,
-            width=disp_w,
-            height=disp_h,
-            drawing_mode="rect",  # new arguement
-            point_display_radius=3,
-            initial_drawing=initial_json,
-            key=f"{key_ns}_canvas_pred_{st.session_state['pred_canvas_nonce']}",
-        )
-        if canvas_result.json_data:
-            objs = canvas_result.json_data.get("objects", [])
-            added_any = False
-            for obj in objs[num_initial:]:
-                if obj.get("type") != "rect":
-                    continue
-                left = float(obj.get("left", 0))
-                top = float(obj.get("top", 0))
-                width = float(obj.get("width", 0)) * float(obj.get("scaleX", 1.0))
-                height = float(obj.get("height", 0)) * float(obj.get("scaleY", 1.0))
-                # map from display to image coords
-                x0 = int(round(left / scale))
-                y0 = int(round(top / scale))
-                x1 = int(round((left + width) / scale))
-                y1 = int(round((top + height) / scale))
-                x0 = max(0, min(rec["W"] - 1, x0))
-                x1 = max(0, min(rec["W"], x1))
-                y0 = max(0, min(rec["H"] - 1, y0))
-                y1 = max(0, min(rec["H"], y1))
-                if x1 < x0:
-                    x0, x1 = x1, x0
-                if y1 < y0:
-                    y0, y1 = y1, y0
-                box = (x0, y0, x1, y1)
-                rec["boxes"].append(box)
-                added_any = True
-            if added_any:
-                st.rerun(scope="fragment")
-
-    # click a mask in the image to remove the mask
-    elif mode == "Remove mask":
-        click = streamlit_image_coordinates(
-            display_for_ui, key=f"{key_ns}_rm", width=disp_w
-        )
-        if click:
-            x = int(round(int(click["x"]) / scale))
-            y = int(round(int(click["y"]) / scale))
-            if (
-                0 <= x < rec["W"]
-                and 0 <= y < rec["H"]
-                and (x, y) != rec.get("last_click_xy")
-            ):
-                inst = rec.get("masks")
-                if isinstance(inst, np.ndarray) and inst.ndim == 2 and inst.size:
-                    iid = int(inst[y, x])
-                    if iid > 0:
-                        inst = inst.copy()
-                        inst[inst == iid] = 0
-                        vals, inv = np.unique(inst, return_inverse=True)
-                        if vals.size > 1:
-                            new_vals = np.zeros_like(vals)
-                            nz = vals != 0
-                            new_vals[nz] = np.arange(1, nz.sum() + 1, dtype=inst.dtype)
-                            inst = new_vals[inv].reshape(inst.shape)
-                            old_labels = rec.setdefault("labels", {})
-                            remap = {
-                                int(old): int(new)
-                                for old, new in zip(vals, new_vals)
-                                if old != 0 and new != 0
-                            }
-                            rec["labels"] = {
-                                remap[oid]: old_labels.get(oid) for oid in remap
-                            }
-                        else:
-                            rec["labels"] = {}
+                    inst, new_id = integrate_new_mask(rec["masks"], mask_full)
+                    if new_id is not None:
                         rec["masks"] = inst
-                        rec["last_click_xy"] = (x, y)
-                        st.rerun(scope="fragment")
-
-    # click on a box in the image to remove the box
-    elif mode == "Remove box":
-        # draw on full-res base_img with original box coords
-        overlay = draw_boxes_overlay(base_img, rec["boxes"], alpha=0.25, outline_px=2)
-        overlay_for_ui = np.array(
-            Image.fromarray(overlay).resize((disp_w, disp_h), Image.BILINEAR)
-        )
-        click = streamlit_image_coordinates(
-            overlay_for_ui, key=f"{key_ns}_pred_click_remove", width=disp_w
-        )
-        if click:
-            x = int(round(int(click["x"]) / scale))
-            y = int(round(int(click["y"]) / scale))
-            hits = [
-                i
-                for i, (x0, y0, x1, y1) in enumerate(rec["boxes"])
-                if (x0 <= x < x1) and (y0 <= y < y1)
-            ]
-            if hits:
-                rec["boxes"].pop(hits[-1])
-                st.rerun()
-
-    # click on a mask in the image to assign it the current class
-    elif mode == "Assign class":
-        click = streamlit_image_coordinates(
-            display_for_ui, key=f"{key_ns}_class_click", width=disp_w
-        )
-        if click and has_instances:
-            x0 = int(round(int(click["x"]) / scale))
-            y0 = int(round(int(click["y"]) / scale))
-            if (
-                0 <= x0 < rec["W"]
-                and 0 <= y0 < rec["H"]
-                and (x0, y0) != rec.get("last_click_xy")
-            ):
-                iid = int(M[y0, x0])
-                if iid > 0:
-                    cur_class = st.session_state.get("side_current_class")
-                    if cur_class == "Remove label":
-                        rec.setdefault("labels", {}).pop(iid, None)
-                    else:
-                        rec.setdefault("labels", {})[iid] = cur_class
-                    rec["last_click_xy"] = (x0, y0)
-                    # force overlay to refresh if it's on
+                        rec.setdefault("labels", {})[int(new_id)] = rec["labels"].get(
+                            int(new_id), None
+                        )
+                        added_any = True
+                if added_any:
                     st.session_state["edit_canvas_nonce"] += 1
                     st.rerun()
-                else:
-                    rec["last_click_xy"] = (x0, y0)
+
+        # click and hold to draw boxes on the image
+        elif mode == "Draw box":
+            bg = Image.fromarray(display_for_ui).convert("RGB")
+            initial_json = boxes_to_fabric_rects(rec["boxes"], scale=scale)
+            num_initial = len(initial_json.get("objects", []))
+            canvas_result = st_canvas(
+                fill_color="rgba(0, 0, 255, 0.25)",
+                stroke_width=2,
+                stroke_color="white",
+                background_color="white",
+                background_image=bg,
+                update_streamlit=True,
+                width=disp_w,
+                height=disp_h,
+                drawing_mode="rect",
+                point_display_radius=3,
+                initial_drawing=initial_json,
+                key=f"{key_ns}_canvas_pred_{st.session_state['pred_canvas_nonce']}",
+            )
+            if canvas_result.json_data:
+                objs = canvas_result.json_data.get("objects", [])
+                added_any = False
+                for obj in objs[num_initial:]:
+                    if obj.get("type") != "rect":
+                        continue
+                    left = float(obj.get("left", 0))
+                    top = float(obj.get("top", 0))
+                    width = float(obj.get("width", 0)) * float(obj.get("scaleX", 1.0))
+                    height = float(obj.get("height", 0)) * float(obj.get("scaleY", 1.0))
+                    x0 = int(round(left / scale))
+                    y0 = int(round(top / scale))
+                    x1 = int(round((left + width) / scale))
+                    y1 = int(round((top + height) / scale))
+                    x0 = max(0, min(rec["W"] - 1, x0))
+                    x1 = max(0, min(rec["W"], x1))
+                    y0 = max(0, min(rec["H"] - 1, y0))
+                    y1 = max(0, min(rec["H"], y1))
+                    if x1 < x0:
+                        x0, x1 = x1, x0
+                    if y1 < y0:
+                        y0, y1 = y1, y0
+                    rec["boxes"].append((x0, y0, x1, y1))
+                    added_any = True
+                if added_any:
+                    st.rerun()
+
+        # click a mask in the image to remove the mask
+        elif mode == "Remove mask":
+            click = streamlit_image_coordinates(
+                display_for_ui, key=f"{key_ns}_rm", width=disp_w
+            )
+            if click:
+                x = int(round(int(click["x"]) / scale))
+                y = int(round(int(click["y"]) / scale))
+                if (
+                    0 <= x < rec["W"]
+                    and 0 <= y < rec["H"]
+                    and (x, y) != rec.get("last_click_xy")
+                ):
+                    inst = rec.get("masks")
+                    if isinstance(inst, np.ndarray) and inst.ndim == 2 and inst.size:
+                        iid = int(inst[y, x])
+                        if iid > 0:
+                            inst = inst.copy()
+                            inst[inst == iid] = 0
+                            vals, inv = np.unique(inst, return_inverse=True)
+                            if vals.size > 1:
+                                new_vals = np.zeros_like(vals)
+                                nz = vals != 0
+                                new_vals[nz] = np.arange(
+                                    1, nz.sum() + 1, dtype=inst.dtype
+                                )
+                                inst = new_vals[inv].reshape(inst.shape)
+                                old_labels = rec.setdefault("labels", {})
+                                remap = {
+                                    int(old): int(new)
+                                    for old, new in zip(vals, new_vals)
+                                    if old != 0 and new != 0
+                                }
+                                rec["labels"] = {
+                                    remap[oid]: old_labels.get(oid) for oid in remap
+                                }
+                            else:
+                                rec["labels"] = {}
+                            rec["masks"] = inst
+                            rec["last_click_xy"] = (x, y)
+                            st.rerun()
+
+        # click on a box in the image to remove the box
+        elif mode == "Remove box":
+            overlay = draw_boxes_overlay(
+                base_img, rec["boxes"], alpha=0.25, outline_px=2
+            )
+            overlay_for_ui = np.array(
+                Image.fromarray(overlay).resize((disp_w, disp_h), Image.BILINEAR)
+            )
+            click = streamlit_image_coordinates(
+                overlay_for_ui, key=f"{key_ns}_pred_click_remove", width=disp_w
+            )
+            if click:
+                x = int(round(int(click["x"]) / scale))
+                y = int(round(int(click["y"]) / scale))
+                hits = [
+                    i
+                    for i, (x0, y0, x1, y1) in enumerate(rec["boxes"])
+                    if (x0 <= x < x1) and (y0 <= y < y1)
+                ]
+                if hits:
+                    rec["boxes"].pop(hits[-1])
+                    st.rerun()
+
+        # click on a mask in the image to assign it the current class
+        elif mode == "Assign class":
+            click = streamlit_image_coordinates(
+                display_for_ui, key=f"{key_ns}_class_click", width=disp_w
+            )
+            if click and has_instances:
+                x0 = int(round(int(click["x"]) / scale))
+                y0 = int(round(int(click["y"]) / scale))
+                if (
+                    0 <= x0 < rec["W"]
+                    and 0 <= y0 < rec["H"]
+                    and (x0, y0) != rec.get("last_click_xy")
+                ):
+                    iid = int(M[y0, x0])
+                    if iid > 0:
+                        cur_class = st.session_state.get("side_current_class")
+                        if cur_class == "No label":
+                            rec.setdefault("labels", {}).pop(iid, None)
+                        else:
+                            rec.setdefault("labels", {})[iid] = cur_class
+                        rec["last_click_xy"] = (x0, y0)
+                        st.session_state["edit_canvas_nonce"] += 1
+                        st.rerun()
+                    else:
+                        rec["last_click_xy"] = (x0, y0)
+
+    with c3:
+        st.markdown(
+            "<br><br><br>", unsafe_allow_html=True
+        )  # filler to move buttons further down the screen
+        if st.button(
+            "Next ▶",
+            key=f"{key_ns}_next_main",
+            use_container_width=True,
+        ):
+            set_current_by_index(rec_idx + 1)
+            st.rerun(scope="fragment")

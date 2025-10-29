@@ -132,7 +132,7 @@ def show_densenet_training_plots(height: int = 600):
         if (k1 not in st.session_state) and (k2 not in st.session_state):
             st.empty()
             return
-        st.header("DenseNet Training Plots")
+        st.header("DenseNet Training Summary")
 
         # button to download fine-tuned model, training data and training stats
         download_densenet_training_record()
@@ -177,22 +177,24 @@ def _cellpose_options(key_ns="train_cellpose"):
     st.info(f"Training set: {n_masks} cell masks across {n_images} images.")
 
     # --- show training options ---
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
 
     # Defaults
     ss.setdefault("cp_base_model", "cyto2")
     ss.setdefault("cp_max_epoch", 100)
-    ss.setdefault("cp_lr", 5e-5)
-    ss.setdefault("cp_wd", 0.1)
+    ss.setdefault("cp_lr", 0.1)
+    ss.setdefault("cp_wd", 5e-4)
     ss.setdefault("cp_nimg", 32)
 
     ss["cp_base_model"] = c1.selectbox(
         "Base model",
-        options=["cyto2", "cyto", "nuclei", "scratch"],
-        index=["cyto2", "cyto", "nuclei", "scratch"].index(ss["cp_base_model"]),
+        options=["cyto", "cyto2", "cyto3", "nuclei", "scratch"],
+        index=["cyto2", "cyto", "cyto3", "nuclei", "scratch"].index(
+            ss["cp_base_model"]
+        ),  # this line sets the
     )
     ss["cp_max_epoch"] = c2.number_input(
-        "Max epochs", 1, 500, int(ss["cp_max_epoch"]), step=5
+        "Max epochs", 1, 1000, int(ss["cp_max_epoch"]), step=10
     )
     ss["cp_lr"] = c3.number_input(
         "Learning rate",
@@ -201,7 +203,7 @@ def _cellpose_options(key_ns="train_cellpose"):
         value=float(ss["cp_lr"]),
         format="%.5f",
     )
-    ss["cp_wd"] = c4.number_input(
+    ss["cp_wd"] = c1.number_input(
         "Weight decay",
         min_value=0.0,
         max_value=1.0,
@@ -211,17 +213,29 @@ def _cellpose_options(key_ns="train_cellpose"):
         key="cp_wd_input",
     )
 
-    ss["cp_nimg"] = st.slider("Images per epoch", 1, 128, int(ss["cp_nimg"]), 1)
-
-    # --- Hyperparameter tuning toggle + grid inputs ---
-    ss.setdefault("cp_do_gridsearch", False)
-    ss["cp_do_gridsearch"] = st.checkbox(
-        "Run hyperparameter tuning (grid search)",
-        value=bool(ss["cp_do_gridsearch"]),
+    ss["cp_nimg"] = c2.selectbox(
+        "Batch size",
+        options=[8, 16, 32, 64],
+        index=[8, 16, 32, 64].index(ss["cp_nimg"]),
+        key="cellpose_batch_size",
     )
 
-    if ss["cp_do_gridsearch"]:
-        with st.expander("Grid search options", expanded=True):
+    # --- Hyperparameter tuning toggle + grid inputs ---
+
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        ss.setdefault("cp_do_gridsearch", False)
+        ss["cp_do_gridsearch"] = st.checkbox(
+            "Optimise hyperparameters",
+            value=bool(ss["cp_do_gridsearch"]),
+        )
+
+    with col2:
+        with st.popover(
+            "Hyperparameter search options",
+            use_container_width=True,
+            help="An exhaustive combinatorial gridsearch will be performed with these values if the 'Optimise hyperparameters' option is selected.",
+        ):
             st.caption("Provide comma-separated lists. Leave blank to use defaults.")
 
             # Defaults for the grid
@@ -431,7 +445,7 @@ def show_cellpose_training_plots(height: int = 600):
         if (k1 not in st.session_state) and (k2 not in st.session_state):
             st.empty()
             return
-        st.header("Cellpose Training plots")
+        st.header("Cellpose Training Summary")
 
         # button for downloading fine-tuned model, training data and training stats in a zip file
         download_cellpose_training_record()

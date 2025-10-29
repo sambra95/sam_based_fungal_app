@@ -152,7 +152,7 @@ def render_images_form():
             column_config={"Remove": st.column_config.CheckboxColumn()},
             disabled=["Image", "Masks Present", "Number of Masks", "Number of Labels"],
         )
-        if st.form_submit_button("Apply", use_container_width=True):
+        if st.form_submit_button("Remove selected images", use_container_width=True):
             for k in edited.loc[edited["Remove"]].index:
                 ss.images.pop(k, None)
             ks = sorted(ss.images)
@@ -268,7 +268,7 @@ def build_masks_images_zip(
         # Class color palette (only if overlays requested)
         palette = (
             palette_from_emojis(
-                st.session_state.setdefault("all_classes", ["Remove label"])
+                st.session_state.setdefault("all_classes", ["No label"])
             )
             if include_overlay
             else None

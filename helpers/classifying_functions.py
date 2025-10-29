@@ -33,7 +33,7 @@ def color_hex_for(name: str) -> str:
     Deterministic, unique color per class name using session-backed mapping.
     Reuses the palette without hashing collisions.
     """
-    if not name or name == "Remove label":
+    if not name or name == "No label":
         return _DEFAULT_FALLBACK_HEX
     cmap = st.session_state.setdefault("class_colors", {})
     if name not in cmap:
@@ -97,11 +97,11 @@ def rename_class_everywhere(old_name: str, new_name: str):
       - emoji map st.session_state['class_emojis']
     """
     ss = st.session_state
-    if not old_name or old_name == "Remove label":
+    if not old_name or old_name == "No label":
         st.warning("That class cannot be renamed.")
         return
     new_name = (new_name or "").strip()
-    if not new_name or new_name == "Remove label":
+    if not new_name or new_name == "No label":
         st.warning("Please choose a non-empty class name that isn't reserved.")
         return
     if new_name == old_name:
@@ -109,7 +109,7 @@ def rename_class_everywhere(old_name: str, new_name: str):
         return
 
     # Ensure class list exists
-    all_classes = ss.setdefault("all_classes", ["Remove label"])
+    all_classes = ss.setdefault("all_classes", ["No label"])
 
     # Track whether target already exists (merge)
     target_exists = new_name in all_classes
@@ -130,7 +130,7 @@ def rename_class_everywhere(old_name: str, new_name: str):
         all_classes = [c for c in all_classes if c != old_name]  # drop old
     if new_name not in all_classes:
         all_classes.append(new_name)
-    # Keep "Remove label" first if you prefer; otherwise keep as-is
+    # Keep "No label" first if you prefer; otherwise keep as-is
     # Re-assign back
     ss["all_classes"] = all_classes
 
@@ -162,15 +162,15 @@ def remove_class_everywhere(name: str):
     Updates:
       - st.session_state['all_classes'] (removes the class)
       - per-image rec['labels'] values (name -> None)
-      - st.session_state['side_current_class'] (fallback to "Remove label" if needed)
+      - st.session_state['side_current_class'] (fallback to "No label" if needed)
       - emoji map st.session_state['class_emojis'] (removes entry)
     """
     ss = st.session_state
 
-    # Ensure class list exists and cant remove "Remove label"
-    if name == "Remove label":
+    # Ensure class list exists and cant remove "No label"
+    if name == "No label":
         return
-    all_classes = ss.setdefault("all_classes", ["Remove label"])
+    all_classes = ss.setdefault("all_classes", ["No label"])
     if name not in all_classes:
         return
 
@@ -190,7 +190,7 @@ def remove_class_everywhere(name: str):
 
     # Fix current selection if needed
     if ss.get("side_current_class") == name:
-        ss["side_current_class"] = "Remove label"
+        ss["side_current_class"] = "No label"
     st.rerun()
 
 
@@ -201,7 +201,7 @@ def palette_from_emojis(class_names):
     """
     pal = {"__unlabeled__": (1.0, 1.0, 1.0)}
     for n in class_names:
-        if not n or n == "Remove label":
+        if not n or n == "No label":
             continue
         pal[n] = _hex_to_rgb01(color_hex_for(n))
     return pal
@@ -216,14 +216,14 @@ def classes_map_from_labels(masks, labels):
         if iid == 0:
             continue
         cls = labels.get(int(iid))
-        classes_map[int(iid)] = cls if cls not in (None, "") else "Remove label"
+        classes_map[int(iid)] = cls if cls not in (None, "") else "No label"
     return classes_map
 
 
 def _row(name: str, count: int, key: str, mode_ns: str = "side"):
     # icon | name | count | select |
     c1, c2, c3, c4 = st.columns([1, 5, 2, 3])
-    if name == "Remove label":
+    if name == "No label":
         c1.write(" ")
     else:
         c1.markdown(_color_chip_md(color_hex_for(name)), unsafe_allow_html=True)
@@ -262,17 +262,21 @@ def _add_label_from_input(labels, new_label_ss):
 @st.fragment
 def classify_actions_fragment():
     rec = current()
-    st.button(
-        "Classify this image with DenseNet-121",
+
+    col1, col2 = st.columns(2)
+    col1.button(
+        "Classify cells",
         use_container_width=True,
         on_click=lambda: classify_cells_with_densenet(rec),
+        help="Classify all masks in this image with the loaded Densenet121 model.",
     )
 
-    st.button(
-        "Batch classify all images with DenseNet-121",
+    col2.button(
+        "Batch classify cells",
         key="btn_batch_classify_cellpose",
         use_container_width=True,
         on_click=_batch_classify_and_refresh,
+        help="Batch classify all masks in all images with the loaded Densenet121 model.",
     )
 
 
@@ -307,16 +311,14 @@ def class_selection_fragment():
     ss.setdefault("side_current_class", ss["all_classes"][0])
 
     rec = current()
-    labels = ss.setdefault("all_classes", ["Remove label"])
+    labels = ss.setdefault("all_classes", ["No label"])
     labdict = rec.get("labels", {}) if isinstance(rec.get("labels"), dict) else {}
 
     # Unlabel row
-    _row(
-        "Remove label", sum(1 for v in labdict.values() if v is None), key="use_unlabel"
-    )
+    _row("No label", sum(1 for v in labdict.values() if v is None), key="use_unlabel")
 
     # Actual classes
-    for name in [c for c in labels if c != "Remove label"]:
+    for name in [c for c in labels if c != "No label"]:
         _row(name, sum(1 for v in labdict.values() if v == name), key=f"use_{name}")
 
     if st.button(
@@ -329,9 +331,11 @@ def class_selection_fragment():
 @st.fragment
 def class_manage_fragment(key_ns="side"):
     ss = st.session_state
-    labels = ss.setdefault("all_classes", ["Remove label"])
+    labels = ss.setdefault("all_classes", ["No label"])
 
     st.markdown("### Add and remove classes")
+
+    # --- Add new class ---
     st.text_input(
         "",
         key="side_new_label",
@@ -339,18 +343,23 @@ def class_manage_fragment(key_ns="side"):
         on_change=_add_label_from_input(labels, ss.get("side_new_label", "")),
     )
 
-    st.text_input(
-        "",
-        key="delete_new_label",
-        placeholder="Delete class here.",
-        on_change=remove_class_everywhere(ss.get("delete_new_label", "")),
-    )
-
-    editable = [c for c in ss.get("all_classes", []) if c != "Remove label"]
-    if not editable:
+    # --- Delete existing class (now as dropdown) ---
+    editable = [c for c in labels if c != "No label"]
+    if editable:
+        del_class = st.selectbox(
+            "Select class to delete",
+            options=["(Select a class)"] + editable,
+            key=f"{key_ns}_delete_label",
+        )
+        if del_class != "(Select a class)":
+            remove_class_everywhere(del_class)()
+            st.success(f"Deleted class: {del_class}")
+            st.rerun()
+    else:
         st.caption("No classes yet. Add a class above first.")
         return
 
+    # --- Rename class ---
     c1, c2 = st.columns([1, 2])
     with c1:
         st.selectbox("Class to relabel", options=editable, key=f"{key_ns}_rename_from")

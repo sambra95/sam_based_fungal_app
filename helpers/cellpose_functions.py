@@ -147,6 +147,7 @@ def segment_rec_with_cellpose(
     cellprob_threshold=-0.2,
     flow_threshold=0.4,
     min_size=0,
+    niter=0,
 ) -> dict:
     """
     Runs Cellpose on rec['image'] and overwrites rec['masks'] with a single (H,W)
@@ -164,6 +165,7 @@ def segment_rec_with_cellpose(
         cellprob_threshold=cellprob_threshold,
         flow_threshold=flow_threshold,
         min_size=min_size,
+        niter=niter,
     )
     mask_output = masks_out[0] if isinstance(masks_out, (list, tuple)) else masks_out
 

@@ -11,7 +11,7 @@ from skimage.measure import regionprops
 def _violin(df: pd.DataFrame, value_col: str):
 
     sub = df.copy()
-    sub["label"] = sub["mask label"].replace("Remove label", None).fillna("Unlabelled")
+    sub["label"] = sub["mask label"].replace("No label", None).fillna("Unlabelled")
     order = sorted(sub["label"].unique(), key=lambda x: (x != "Unlabelled", str(x)))
     pal = sns.color_palette("Set2", n_colors=len(order))
 
@@ -62,7 +62,7 @@ def _bar(df: pd.DataFrame, value_col: str):
     import seaborn as sns, matplotlib.pyplot as plt
 
     sub = df.copy()
-    sub["label"] = sub["mask label"].replace("Remove label", None).fillna("Unlabelled")
+    sub["label"] = sub["mask label"].replace("No label", None).fillna("Unlabelled")
     order = sorted(sub["label"].unique(), key=lambda x: (x != "Unlabelled", str(x)))
     pal = sns.color_palette("Set2", n_colors=len(order))
 
@@ -114,9 +114,7 @@ def _build_analysis_df():
                 {
                     "image": rec["name"],
                     "mask #": iid,
-                    "mask label": (
-                        "Unlabelled" if cls in (None, "Remove label") else cls
-                    ),
+                    "mask label": ("Unlabelled" if cls in (None, "No label") else cls),
                     "mask area": float(prop.area),
                     "mask perimeter": float(
                         prop.perimeter
@@ -147,7 +145,7 @@ def build_image_summary_df():
 
         for iid in ids:
             cls = labdict.get(int(iid))
-            if cls is None or cls == "Remove label":
+            if cls is None or cls == "No label":
                 unlabelled += 1
             else:
                 counts[cls] = counts.get(cls, 0) + 1

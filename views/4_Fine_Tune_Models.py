@@ -4,9 +4,6 @@ from panels import fine_tune_panel
 
 common_boot()
 
-st.title("🧠 Fine Tune Segmentation and Classification Models")
-st.divider()
-
 col1, col2 = st.columns([1, 1])
 
 # Main content
@@ -19,9 +16,12 @@ with col2:
 
 
 st.divider()
-st.header("Most recent training results:")
-col1, col2 = st.columns([1, 1])
-with col1:
+st.header("Training Results:")
+cellpose_tab, densenet_tab = st.tabs(
+    ["Cellpose Training Results", "Densenet Training Results"]
+)
+
+with cellpose_tab:
     fine_tune_panel.show_cellpose_training_plots(height=700)
-with col2:
+with densenet_tab:
     fine_tune_panel.show_densenet_training_plots(height=700)

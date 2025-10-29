@@ -133,7 +133,7 @@ def classify_cells_with_densenet(rec: dict) -> None:
     preds = model.predict(X, verbose=0).argmax(axis=1)
 
     # add class predictions to the record
-    all_classes = [c for c in ss.get("all_classes", []) if c != "Remove label"] or [
+    all_classes = [c for c in ss.get("all_classes", []) if c != "No label"] or [
         "class0",
         "class1",
     ]
@@ -142,7 +142,7 @@ def classify_cells_with_densenet(rec: dict) -> None:
         idx = int(cls_idx)
         name = all_classes[idx] if idx < len(all_classes) else str(idx)
         labels[int(iid)] = name
-        if name and name != "Remove label" and name not in ss.get("all_classes", []):
+        if name and name != "No label" and name not in ss.get("all_classes", []):
             ss.setdefault("all_classes", []).append(name)
 
     ss.images[ss.current_key] = rec
@@ -295,7 +295,7 @@ def load_labeled_patches_from_session(patch_size: int = 64):
     """
     ims = st.session_state.get("images", {}) or {}
     all_classes = [
-        c for c in st.session_state.get("all_classes", []) if c != "Remove label"
+        c for c in st.session_state.get("all_classes", []) if c != "No label"
     ]
     if not all_classes:
         all_classes = ["class0", "class1"]
@@ -310,7 +310,7 @@ def load_labeled_patches_from_session(patch_size: int = 64):
         ids = [int(v) for v in np.unique(M) if v != 0]
         for iid in ids:
             cname = labs.get(int(iid))
-            if not cname or cname == "Remove label":
+            if not cname or cname == "No label":
                 continue
             patch = generate_cell_patch(
                 image=img, mask=(M == iid), patch_size=patch_size
@@ -441,8 +441,16 @@ def fine_tune_densenet(input_size, batch_size, epochs, val_split):
     return history, val_gen, classes
 
 
+from sklearn.metrics import (
+    accuracy_score,
+    precision_recall_fscore_support,
+    confusion_matrix,
+    classification_report,
+)
+
+
 def evaluate_fine_tinued_densenet(history, val_gen, classes):
-    """evaluates the fine tuned densenet model and plots a confusion matrix and bar graph (accuracy, precision, f1)"""
+    # 1) collect full val set
     Xv, yv = [], []
     for i in range(len(val_gen)):
         xb, yb = val_gen[i]
@@ -451,29 +459,57 @@ def evaluate_fine_tinued_densenet(history, val_gen, classes):
     Xv = np.concatenate(Xv, axis=0)
     yv = np.concatenate(yv, axis=0)
 
-    y_probs = ss["densenet_model"].predict(Xv, verbose=0)
+    # 2) ensure yv are class indices (not one-hot/probabilities)
+    if yv.ndim == 2:  # e.g., shape (N, C)
+        y_true = np.argmax(yv, axis=1)
+    else:
+        y_true = yv.astype(int)
+
+    # 3) predictions as indices
+    y_probs = st.session_state["densenet_model"].predict(Xv, verbose=0)
     y_pred = np.argmax(y_probs, axis=1)
 
     st.info(
         "Model stored in session. You can use it immediately from the **Classify cells** panel."
     )
 
-    acc = accuracy_score(yv, y_pred)
-    prec = precision_score(yv, y_pred, average="weighted", zero_division=0)
-    f1 = f1_score(yv, y_pred, average="weighted", zero_division=0)
-    metrics_dict = {"Accuracy": acc, "Precision": prec, "F1": f1}
+    # 4) metrics (macro often more informative; weighted also shown)
+    acc = accuracy_score(y_true, y_pred)
+    prec_w, rec_w, f1_w, _ = precision_recall_fscore_support(
+        y_true, y_pred, average="weighted", zero_division=0
+    )
+    prec_m, rec_m, f1_m, _ = precision_recall_fscore_support(
+        y_true, y_pred, average="macro", zero_division=0
+    )
 
-    # Plots
+    metrics_dict = {
+        "Accuracy": acc,
+        "Precision (weighted)": prec_w,
+        "F1 (weighted)": f1_w,
+        "Precision (macro)": prec_m,
+        "F1 (macro)": f1_m,
+    }
 
-    # plot a) losses and b) accuracy, precision and f1 on validation set
+    # 5) plots
     fig = _plot_densenet_losses(
         history.history.get("loss", []),
         history.history.get("val_loss", []),
-        metrics=metrics_dict,
+        metrics={
+            "Accuracy": acc,
+            "Precision": prec_w,
+            "F1": f1_w,
+        },  # keep your bar chart concise
     )
-    # plot confusion matrix on validation set
-    cm = confusion_matrix(yv, y_pred, labels=np.arange(len(classes)))
-    fig = _plot_confusion_matrix(cm, classes, normalize=False)
+
+    cm = confusion_matrix(y_true, y_pred, labels=np.arange(len(classes)))
+    _ = _plot_confusion_matrix(cm, classes, normalize=False)
+
+    # (optional) quick text report in the app for sanity-checking
+    st.code(
+        classification_report(
+            y_true, y_pred, target_names=list(classes), zero_division=0
+        )
+    )
 
 
 # -------------------------------
@@ -633,6 +669,13 @@ def build_patchset_zip_from_session(patch_size: int = 64) -> bytes | None:
     return buf.getvalue()
 
 
+import io as IO, os, tempfile
+from zipfile import ZipFile, ZIP_DEFLATED
+from datetime import datetime
+import pandas as pd
+import streamlit as st
+
+
 def download_densenet_training_record():
     ss = st.session_state
     psize = int(ss.get("dn_input_size", 64))
@@ -655,8 +698,26 @@ def download_densenet_training_record():
 
         buf = IO.BytesIO()
         with ZipFile(buf, "w", ZIP_DEFLATED) as zout:
+            # --- Models ---
             if ss.get("densenet_model_bytes"):
                 zout.writestr("densenet_model.pt", ss["densenet_model_bytes"])
+
+            if ss.get("densenet_model") is not None:
+                # Keras 3: save to a real filepath with .keras extension
+                tmp = tempfile.NamedTemporaryFile(suffix=".keras", delete=False)
+                tmp_path = tmp.name
+                tmp.close()
+                try:
+                    ss["densenet_model"].save(tmp_path)  # format inferred from ".keras"
+                    with open(tmp_path, "rb") as f:
+                        zout.writestr("densenet_model.keras", f.read())
+                finally:
+                    try:
+                        os.remove(tmp_path)
+                    except OSError:
+                        pass
+
+            # --- Params ---
             zout.writestr(
                 "params.csv",
                 pd.Series(params)
@@ -664,8 +725,12 @@ def download_densenet_training_record():
                 .reset_index(name="value")
                 .to_csv(index=False),
             )
+
+            # --- Patchset (images + labels.csv) ---
             for n in zin.namelist():
                 zout.writestr(n, zin.read(n))
+
+            # --- Plots ---
             for k, p in [
                 ("densenet_plot_losses_png", "plots/densenet_losses.png"),
                 ("densenet_plot_confusion_png", "plots/densenet_confusion.png"),
