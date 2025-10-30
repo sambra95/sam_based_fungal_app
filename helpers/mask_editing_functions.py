@@ -569,7 +569,7 @@ def display_and_interact_fragment(key_ns="edit", scale=1.5):
             "<br><br><br>", unsafe_allow_html=True
         )  # filler to move buttons further down the screen
         if st.button(
-            "◀ Prev",
+            "◀",
             key=f"{key_ns}_prev_main",
             use_container_width=True,
         ):
@@ -792,7 +792,7 @@ def display_and_interact_fragment(key_ns="edit", scale=1.5):
             "<br><br><br>", unsafe_allow_html=True
         )  # filler to move buttons further down the screen
         if st.button(
-            "Next ▶",
+            "*▶*",
             key=f"{key_ns}_next_main",
             use_container_width=True,
         ):
