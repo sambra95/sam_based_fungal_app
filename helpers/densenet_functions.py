@@ -449,7 +449,7 @@ from sklearn.metrics import (
 )
 
 
-def evaluate_fine_tinued_densenet(history, val_gen, classes):
+def evaluate_fine_tuned_densenet(history, val_gen, classes):
     # 1) collect full val set
     Xv, yv = [], []
     for i in range(len(val_gen)):
@@ -466,29 +466,18 @@ def evaluate_fine_tinued_densenet(history, val_gen, classes):
         y_true = yv.astype(int)
 
     # 3) predictions as indices
-    y_probs = st.session_state["densenet_model"].predict(Xv, verbose=0)
-    y_pred = np.argmax(y_probs, axis=1)
+    yprobs = st.session_state["densenet_model"].predict(Xv, verbose=0)
+    st.session_state["y_pred"] = np.argmax(yprobs, axis=1)
 
     st.info(
         "Model stored in session. You can use it immediately from the **Classify cells** panel."
     )
 
     # 4) metrics (macro often more informative; weighted also shown)
-    acc = accuracy_score(y_true, y_pred)
-    prec_w, rec_w, f1_w, _ = precision_recall_fscore_support(
-        y_true, y_pred, average="weighted", zero_division=0
-    )
+    acc = accuracy_score(y_true, st.session_state["y_pred"])
     prec_m, rec_m, f1_m, _ = precision_recall_fscore_support(
-        y_true, y_pred, average="macro", zero_division=0
+        y_true, st.session_state["y_pred"], average="macro", zero_division=0
     )
-
-    metrics_dict = {
-        "Accuracy": acc,
-        "Precision (weighted)": prec_w,
-        "F1 (weighted)": f1_w,
-        "Precision (macro)": prec_m,
-        "F1 (macro)": f1_m,
-    }
 
     # 5) plots
     fig = _plot_densenet_losses(
@@ -496,18 +485,23 @@ def evaluate_fine_tinued_densenet(history, val_gen, classes):
         history.history.get("val_loss", []),
         metrics={
             "Accuracy": acc,
-            "Precision": prec_w,
-            "F1": f1_w,
+            "Precision": prec_m,
+            "F1": f1_m,
         },  # keep your bar chart concise
     )
 
-    cm = confusion_matrix(y_true, y_pred, labels=np.arange(len(classes)))
+    cm = confusion_matrix(
+        y_true, st.session_state["y_pred"], labels=np.arange(len(classes))
+    )
     _ = _plot_confusion_matrix(cm, classes, normalize=False)
 
     # (optional) quick text report in the app for sanity-checking
     st.code(
         classification_report(
-            y_true, y_pred, target_names=list(classes), zero_division=0
+            y_true,
+            st.session_state["y_pred"],
+            target_names=list(classes),
+            zero_division=0,
         )
     )
 

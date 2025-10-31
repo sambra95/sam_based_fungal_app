@@ -14,7 +14,7 @@ from helpers.state_ops import ordered_keys
 from helpers.densenet_functions import (
     load_labeled_patches_from_session,
     fine_tune_densenet,
-    evaluate_fine_tinued_densenet,
+    evaluate_fine_tuned_densenet,
     download_densenet_training_record,
 )
 from helpers.cellpose_functions import (
@@ -112,7 +112,7 @@ def densenet_train_fragment():
     )
 
     # evaluate the fine tuned densenet model on validation dataset
-    evaluate_fine_tinued_densenet(history=history, val_gen=val_gen, classes=classes)
+    evaluate_fine_tuned_densenet(history=history, val_gen=val_gen, classes=classes)
 
 
 def render_densenet_train_panel(key_ns: str = "train_densenet"):
@@ -126,8 +126,10 @@ def show_densenet_training_plots(height: int = 600):
     k1, k2 = "densenet_plot_losses_png", "densenet_plot_confusion_png"
     with st.container(border=True, height=height):
         if (k1 not in st.session_state) and (k2 not in st.session_state):
+            st.info("No fine-tuning data available. Tune a model first.")
             st.empty()
             return
+
         st.header("DenseNet Training Summary")
 
         # button to download fine-tuned model, training data and training stats

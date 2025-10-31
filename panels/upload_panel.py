@@ -55,7 +55,6 @@ def render_main():
             if cellpose_file is not None:
                 ss["cellpose_model_bytes"] = cellpose_file.read()
                 ss["cellpose_model_name"] = cellpose_file.name
-                st.success(f"Loaded Cellpose model: {cellpose_file.name}")
 
             # display the currently loaded model
             cellpose_model = ss.get("cellpose_model_name") or "—"
@@ -100,7 +99,6 @@ def render_main():
                 ss["densenet_model"] = model
                 ss["densenet_model_path"] = path
                 ss["densenet_ckpt_name"] = densenet_file.name
-                st.success(f"Loaded DenseNet-121 classifier: {densenet_file.name}")
 
             # display the currently loaded model
             densenet_model = ss.get("densenet_ckpt_name") or "—"
@@ -108,7 +106,7 @@ def render_main():
 
             # button to remove the currently loaded model
             if st.button("Clear DenseNet-121 model", use_container_width=True):
-                ss["densenet_ckpt_bytes"] = None
+                ss["densenet_model"] = None
                 ss["densenet_ckpt_name"] = None
 
     # ---- Status panel ----

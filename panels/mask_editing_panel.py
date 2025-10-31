@@ -18,7 +18,6 @@ from helpers.classifying_functions import (
 
 from helpers.upload_download_functions import (
     build_masks_images_zip,
-    build_patchset_zip_from_session,
 )
 
 # ---------- Rendering functions ----------

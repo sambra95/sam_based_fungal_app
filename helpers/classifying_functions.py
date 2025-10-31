@@ -269,7 +269,7 @@ def classify_actions_fragment():
         use_container_width=True,
         on_click=lambda: classify_cells_with_densenet(rec),
         help="Classify all masks in this image with the loaded Densenet121 model.",
-        disabled=st.session_state["densenet_ckpt_bytes"] == None,
+        disabled=st.session_state["densenet_model"] == None,
     )
 
     col2.button(
@@ -278,7 +278,7 @@ def classify_actions_fragment():
         use_container_width=True,
         on_click=_batch_classify_and_refresh,
         help="Batch classify all masks in all images with the loaded Densenet121 model.",
-        disabled=st.session_state["densenet_ckpt_bytes"] == None,
+        disabled=st.session_state["densenet_model"] == None,
     )
 
 

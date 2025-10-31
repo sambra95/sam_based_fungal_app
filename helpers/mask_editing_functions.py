@@ -108,7 +108,7 @@ def _read_cellpose_hparams_from_state():
     # Build kwargs matching segment_rec_with_cellpose signature
     ch1 = int(st.session_state.get("cp_ch1"))
     ch2 = int(st.session_state.get("cp_ch2"))
-    diameter = st.session_state.get("cp_diameter", None)
+    diameter = st.session_state.get("cp_diameter")
     # ensure None if 0.0 when Auto
     if st.session_state.get("cp_diam_mode", "Auto (None)") == "Auto (None)":
         diameter = None
@@ -119,20 +119,8 @@ def _read_cellpose_hparams_from_state():
         cellprob_threshold=float(st.session_state.get("cp_cellprob_threshold")),
         flow_threshold=float(st.session_state.get("cp_flow_threshold")),
         min_size=int(st.session_state.get("cp_min_size")),
-        niter=int(st.session_state.get("niter")),
+        niter=int(st.session_state.get("cp_niter")),
     )
-
-
-def _reset_cellpose_hparams_to_defaults():
-    """resets hparam values in session state"""
-    st.session_state["cp_ch1"] = 0
-    st.session_state["cp_ch2"] = 0
-    st.session_state["cp_diam_mode"] = "Auto (None)"
-    st.session_state["cp_diameter"] = None
-    st.session_state["cp_cellprob_threshold"] = -0.2
-    st.session_state["cp_flow_threshold"] = 0.4
-    st.session_state["cp_min_size"] = 0
-    st.toast("Cellpose hyperparameters reset to defaults")
 
 
 # ============================================================
@@ -366,9 +354,8 @@ def cellpose_hyperparameters_fragment():
         "Niter",
         value=int(st.session_state["cp_niter"]),
         min_value=0,
-        max_value=1000,
         step=10,
-        key="cp_niter_button",
+        key="cp_niter",
         help="Higher values favour longer, stringier, cells.",
     )
 
@@ -544,9 +531,6 @@ def display_and_interact_fragment(key_ns="edit", scale=1.5):
     if rec is None:
         st.warning("Upload an image in **Upload data** first.")
         return
-
-    st.session_state.setdefault("all_classes", ["No label"])
-    st.session_state.setdefault("side_current_class", "No label")
 
     # --- header: title + controls (Prev / Next / toggles) ---
     ok = ordered_keys()
