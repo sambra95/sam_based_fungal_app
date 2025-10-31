@@ -43,10 +43,6 @@ def _densenet_options(key_ns="train_densenet"):
     densenet_summary_fragment()
 
     c1, c2, c4 = st.columns(3)
-    ss.setdefault("dn_input_size", 64)
-    ss.setdefault("dn_batch_size", 32)
-    ss.setdefault("dn_max_epoch", 100)
-    ss.setdefault("dn_val_split", 0.2)
 
     ss["dn_input_size"] = c1.selectbox(
         "Input size",
@@ -73,7 +69,7 @@ def _densenet_options(key_ns="train_densenet"):
 @st.fragment
 def densenet_summary_fragment():
     """Loads patches and shows a simple class frequency table (reruns when the page reruns)."""
-    input_size = int(ss.get("dn_input_size", 64))
+    input_size = int(ss.get("dn_input_size"))
 
     # Load patches only for summary; heavy-ish but isolated here
     X, y, classes = load_labeled_patches_from_session(patch_size=input_size)
@@ -105,9 +101,9 @@ def densenet_train_fragment():
         return
 
     # Read hyperparameter options from session
-    input_size = int(ss.get("dn_input_size", 64))
-    batch_size = int(ss.get("dn_batch_size", 32))
-    epochs = int(ss.get("dn_max_epoch", 100))
+    input_size = int(ss.get("dn_input_size"))
+    batch_size = int(ss.get("dn_batch_size"))
+    epochs = int(ss.get("dn_max_epoch"))
     val_split = 0.2
 
     # fine tune the densenet model
@@ -273,7 +269,7 @@ def cellpose_train_fragment():
         return
 
     recs = {k: st.session_state["images"][k] for k in ordered_keys()}
-    base_model = ss.get("cp_base_model", "cyto2")
+    base_model = ss.get("cp_base_model")
     epochs = int(ss.get("cp_max_epoch"))
     lr = float(ss.get("cp_learning_rate"))
     wd = float(ss.get("cp_weight_decay"))
@@ -309,7 +305,7 @@ def cellpose_train_fragment():
         masks = [masks[i] for i in idx]
 
     # ----- OPTIONAL: Hyperparameter grid search -----
-    if ss.get("cp_do_gridsearch", False):
+    if ss.get("cp_do_gridsearch"):
         st.subheader("Hyperparameter tuning (grid search)")
 
         # Parse user grid text inputs into lists
@@ -349,8 +345,8 @@ def cellpose_train_fragment():
             st.warning("No valid grid combinations. Skipping tuning.")
         else:
             # Get channels from session (fallback 0,0)
-            ch1 = int(st.session_state.get("cp_ch1", 0))
-            ch2 = int(st.session_state.get("cp_ch2", 0))
+            ch1 = int(st.session_state.get("cp_ch1"))
+            ch2 = int(st.session_state.get("cp_ch2"))
             channels = [ch1, ch2]
 
             # Load the in-memory fine-tuned model from session state
@@ -361,12 +357,9 @@ def cellpose_train_fragment():
                 model_type=base_model if base_model != "scratch" else "cyto2",
             )
             ft_bytes = st.session_state.get("cellpose_model_bytes")
-            if ft_bytes:
-                try:
-                    sd = torch.load(IO.BytesIO(ft_bytes), map_location="cpu")
-                    eval_model.net.load_state_dict(sd)
-                except Exception as e:
-                    st.error(f"Failed to load fine-tuned weights from session: {e}")
+
+            sd = torch.load(IO.BytesIO(ft_bytes), map_location="cpu")
+            eval_model.net.load_state_dict(sd)
 
             results = []
             pb = st.progress(0.0, text="Starting grid search…")
@@ -375,25 +368,19 @@ def cellpose_train_fragment():
                     i / total,
                     text=f"Evaluating {i}/{total} (cp={cellprob}, flow={flowthresh}, niter={niter}, min={min_size})",
                 )
-                try:
-                    masks_pred, flows, styles = eval_model.eval(
-                        list(images),
-                        channels=list(channels),
-                        diameter=None,
-                        cellprob_threshold=cellprob,
-                        flow_threshold=flowthresh,
-                        niter=niter,
-                        min_size=min_size,
-                    )
-                    ap = metrics.average_precision(masks, masks_pred)[
-                        0
-                    ]  # AP per-image matrix
-                    score = float(np.nanmean(ap[:, 0]))  # mean AP at IoU=0.5
-                except Exception as e:
-                    st.warning(
-                        f"Evaluation error for cp={cellprob}, flow={flowthresh}, niter={niter}, min={min_size}: {e}"
-                    )
-                    score = float("nan")
+                masks_pred, flows, styles = eval_model.eval(
+                    list(images),
+                    channels=list(channels),
+                    diameter=None,
+                    cellprob_threshold=cellprob,
+                    flow_threshold=flowthresh,
+                    niter=niter,
+                    min_size=min_size,
+                )
+                ap = metrics.average_precision(masks, masks_pred)[
+                    0
+                ]  # AP per-image matrix
+                score = float(np.nanmean(ap[:, 0]))  # mean AP at IoU=0.5
 
                 results.append(
                     {
@@ -412,7 +399,6 @@ def cellpose_train_fragment():
                 by="ap_iou_0.5", ascending=False, na_position="last"
             )
             st.session_state["cp_grid_results_df"] = df
-            st.dataframe(df, use_container_width=True)
 
             # Pick best and push into session state used by the mask editing panel
             if not df.empty and np.isfinite(df["ap_iou_0.5"].iloc[0]):
@@ -443,27 +429,35 @@ def show_cellpose_training_plots(height: int = 600):
     k1, k2 = "cp_losses_png", "cp_compare_iou_png"
     with st.container(border=True, height=height):
         if (k1 not in st.session_state) and (k2 not in st.session_state):
-            st.empty()
+            st.header("Cellpose Training Summary")
+            st.info("No fine-tuning data to show.")
             return
-        st.header("Cellpose Training Summary")
 
-        # button for downloading fine-tuned model, training data and training stats in a zip file
-        download_cellpose_training_record()
+        else:
 
-        if k1 in st.session_state:
+            st.header("Cellpose Training Summary")
+
+            # button for downloading fine-tuned model, training data and training stats in a zip file
+            download_cellpose_training_record()
+
             st.image(
                 st.session_state[k1],
                 use_container_width=True,
             )
-        else:
-            st.info("No fine-tuning data to show.")
-        if k2 in st.session_state:
+
             st.image(
                 st.session_state[k2],
                 use_container_width=True,
             )
-        else:
-            st.info("No fine-tuning data to show.")
+
+            if ss.get("cp_do_gridsearch"):
+                st.dataframe(
+                    st.session_state["cp_grid_results_df"],
+                    hide_index=True,
+                    use_container_width=True,
+                )
+            else:
+                st.info("No hyperparameter tuning performed.")
 
 
 def render_cellpose_train_panel(key_ns="train_cellpose"):
