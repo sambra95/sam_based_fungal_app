@@ -9,7 +9,7 @@ secret.txt
 *.log
 *.tif
 *.npy
-*.DS_Store
+**/.DS_Store
 
 # Ignore compiled Python files
 __pycache__/
