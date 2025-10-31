@@ -8,7 +8,6 @@ secret.txt
 # Ignore all .log files anywhere
 *.log
 *.tif
-*.yaml
 *.npy
 .DS_Store
 
