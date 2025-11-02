@@ -168,10 +168,8 @@ def render_images_form():
 
 
 import io
-import csv
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
-
 import numpy as np
 import streamlit as st
 from PIL import Image, ImageDraw
@@ -195,7 +193,7 @@ def _counts_for_rec(rec) -> dict:
     # Values in labels can be strings or ints or None; normalize to str
     by_class = {}
     for iid, cname in labels.items():
-        cname = "unlabeled" if cname in (None, "", -1) else str(cname)
+        cname = "No label" if cname in (None, "", -1) else str(cname)
         by_class[cname] = by_class.get(cname, 0) + 1
     return by_class
 
@@ -214,10 +212,15 @@ def build_masks_images_zip(
             else None
         )
 
+        # --- prep columns & rows for summary.csv
+        class_cols = [c for c in st.session_state["all_classes"]]
+        summary_rows = []
+
         # iterate through records
         for k in key_order:
             rec = state_images[k]
             name = Path(rec.get("name", f"{k}")).stem
+            counts = _counts_for_rec(rec)
 
             # write mask
             mask = rec.get("masks")
@@ -244,7 +247,6 @@ def build_masks_images_zip(
 
             # optionally annotate image with class counts
             if include_counts:
-                counts = _counts_for_rec(rec)
                 lines = [f"{cls}: {cnt}" for cls, cnt in sorted(counts.items())]
                 if lines:
                     txt = "\n".join(lines)
@@ -261,10 +263,22 @@ def build_masks_images_zip(
                     d.multiline_text((img_w + 5, 5), txt, fill=(0, 0, 0))
                     img = np.array(new_img)
 
+            # capture a row for the CSV
+            row = {"image": name}
+            row.update({c: int(counts.get(c, 0)) for c in class_cols})
+            row["total"] = int(sum(counts.values()))
+            summary_rows.append(row)
+
             # write processed image to zip file
             ibuf = io.BytesIO()
             tiff.imwrite(ibuf, img, photometric="rgb", compression="deflate")
             zf.writestr(f"images/{name}.tif", ibuf.getvalue())
+
+        # --- write summary.csv into the zip (image + per-class + total)
+        df = pd.DataFrame(summary_rows, columns=["image"] + class_cols + ["total"])
+        csv_buf = io.StringIO()
+        df.to_csv(csv_buf, index=False)
+        zf.writestr("summary.csv", csv_buf.getvalue())
 
     return buf.getvalue()
 
