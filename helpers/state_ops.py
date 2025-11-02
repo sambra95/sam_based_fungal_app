@@ -44,6 +44,9 @@ def ensure_global_state() -> None:
     ss.setdefault("dn_val_split", 0.2)
     ss.setdefault("cp_compare_iou_png")
 
+    # densenet
+    ss.setdefault("densenet_model", None)
+
     # image dataset download options
     ss.setdefault("dl_normalize_download", False)
 
