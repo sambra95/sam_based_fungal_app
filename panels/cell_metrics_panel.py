@@ -1,7 +1,7 @@
 # panels/cell_metrics_panel.py
 import streamlit as st
 
-from helpers.upload_download_functions import ordered_keys
+from helpers.upload_download_functions import ordered_keys, _build_cell_metrics_zip
 from helpers.cell_metrics_functions import (
     _build_analysis_df,
     _violin,
@@ -54,6 +54,17 @@ def render_sidebar():
         options=metric_options,
         default=default_metrics,
         key="analysis_metrics",
+    )
+
+    st.download_button(
+        "Download cell metrics (.zip)",
+        data=_build_cell_metrics_zip(
+            tuple(st.session_state.get("analysis_labels") or ())
+        ),
+        file_name="cell_metrics.zip",
+        mime="application/zip",
+        use_container_width=True,
+        key="dl_cell_metrics_zip",
     )
 
 

@@ -26,7 +26,6 @@ pages = {
             icon="🧠",
         ),
         st.Page("views/5_Cell_Metrics.py", title="Analyze Cell Groups", icon="📊"),
-        st.Page("views/6_Downloads.py", title="Download Models and Data", icon="⬇️"),
     ],
 }
 
