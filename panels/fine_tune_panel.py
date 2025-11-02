@@ -136,12 +136,13 @@ def show_densenet_training_plots(height: int = 600):
 
             # button to download fine-tuned model, training data and training stats
             download_densenet_training_record()
-
+            st.subheader("Training losses and validation metrics")
             st.image(
                 st.session_state[k1],
                 use_container_width=True,
             )
 
+            st.subheader("Class confusion matrix")
             st.image(
                 st.session_state[k2],
                 use_container_width=True,

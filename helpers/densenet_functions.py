@@ -19,7 +19,11 @@ from tensorflow.keras.optimizers import Adam
 from sklearn.model_selection import train_test_split
 from sklearn.utils.class_weight import compute_class_weight
 from tensorflow.keras.callbacks import EarlyStopping
-from sklearn.metrics import accuracy_score, confusion_matrix
+from sklearn.metrics import (
+    accuracy_score,
+    precision_recall_fscore_support,
+    confusion_matrix,
+)
 
 
 # ---- bring in existing app helpers ----
@@ -438,14 +442,6 @@ def fine_tune_densenet(input_size, batch_size, epochs, val_split):
     return history, val_gen, classes
 
 
-from sklearn.metrics import (
-    accuracy_score,
-    precision_recall_fscore_support,
-    confusion_matrix,
-    classification_report,
-)
-
-
 def evaluate_fine_tuned_densenet(history, val_gen, classes):
     # 1) collect full val set
     Xv, yv = [], []
@@ -658,6 +654,8 @@ def download_densenet_training_record():
         return
 
     with ZipFile(io.BytesIO(pzip)) as zin:
+
+        # collect training parameters
         labels = pd.read_csv(io.BytesIO(zin.read("cell_patch_labels.csv")))
         params = dict(
             timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -669,25 +667,22 @@ def download_densenet_training_record():
             classes=labels["label"].nunique(),
         )
 
+        # create the zip file
         buf = io.BytesIO()
         with ZipFile(buf, "w", ZIP_DEFLATED) as zout:
-            # --- Models ---
+
+            # add models to the zip file
             if ss.get("densenet_model") is not None:
                 # Keras 3: save to a real filepath with .keras extension
                 tmp = tempfile.NamedTemporaryFile(suffix=".keras", delete=False)
                 tmp_path = tmp.name
                 tmp.close()
-                try:
-                    ss["densenet_model"].save(tmp_path)  # format inferred from ".keras"
-                    with open(tmp_path, "rb") as f:
-                        zout.writestr("densenet_finetuned.keras", f.read())
-                finally:
-                    try:
-                        os.remove(tmp_path)
-                    except OSError:
-                        pass
+                ss["densenet_model"].save(tmp_path)  # format inferred from ".keras"
+                with open(tmp_path, "rb") as f:
+                    zout.writestr("densenet_finetuned.keras", f.read())
+                os.remove(tmp_path)
 
-            # --- Params ---
+            # add training parameters to zip file
             zout.writestr(
                 "training_params.csv",
                 pd.Series(params)
@@ -696,11 +691,11 @@ def download_densenet_training_record():
                 .to_csv(index=False),
             )
 
-            # --- Patchset (images + labels.csv) ---
+            # add the cell patch training set to the zip file
             for n in zin.namelist():
                 zout.writestr(n, zin.read(n))
 
-            # --- Plots ---
+            # add the training summary plots to the zip file
             for k, p in [
                 ("densenet_plot_losses_png", "plots/densenet_losses.png"),
                 ("densenet_plot_confusion_png", "plots/densenet_confusion.png"),
