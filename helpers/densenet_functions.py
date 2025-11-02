@@ -12,6 +12,7 @@ from zipfile import ZipFile, ZIP_DEFLATED
 import os
 import tempfile
 import plotly.io as pio
+import plotly.graph_objects as go
 
 from tensorflow.keras.utils import Sequence
 from tensorflow.keras import layers, models
@@ -473,19 +474,22 @@ def evaluate_fine_tuned_densenet(history, val_gen, classes):
         y_true, y_pred, average="macro", zero_division=0
     )
 
-    # 5) plots
-    fig = _plot_densenet_losses(
-        history.history.get("loss", []),
-        history.history.get("val_loss", []),
-        metrics={
-            "Accuracy": acc,
-            "Precision": prec_m,
-            "F1": f1_m,
-        },  # keep your bar chart concise
-    )
+    # 5a) plot densenet training losses and save to session state
+    train_losses = history.history.get("loss")
+    val_losses = history.history.get("val_loss", [])
+    ss["densenet_training_losses"] = _plot_densenet_loss_curve(train_losses, val_losses)
 
+    # 5b) plots training metrics and add to session state
+    metrics = {
+        "Accuracy": acc,
+        "Precision": prec_m,
+        "F1": f1_m,
+    }
+    ss["densenet_training_metrics"] = _plot_densenet_metrics(metrics)
+
+    # 5c) plot confusion matrix and add to session state
     cm = confusion_matrix(y_true, y_pred, labels=np.arange(len(classes)))
-    _ = _plot_confusion_matrix(cm, classes, normalize=False)
+    st.session_state["densenet_confusion_matrix"] = _plot_confusion_matrix(cm, classes)
 
 
 # -------------------------------
@@ -493,35 +497,19 @@ def evaluate_fine_tuned_densenet(history, val_gen, classes):
 # -------------------------------
 
 
-def _plot_confusion_matrix(cm, class_names, *, normalize=True):
+def _plot_confusion_matrix(cm, class_names):
     """
     Interactive confusion matrix using Plotly.
-    - optional row-normalization to percentages
     - count + % annotated in each cell
     - readable axes & colors
     """
-    import numpy as np
-    import plotly.graph_objects as go
-
-    if normalize:
-        with np.errstate(invalid="ignore", divide="ignore"):
-            cmn = cm.astype(float) / cm.sum(axis=1, keepdims=True)
-            cmn = np.nan_to_num(cmn)
-    else:
-        cmn = cm
 
     n = len(class_names)
-    text = [
-        [
-            f"{cm[i,j]}<br>{cmn[i,j]*100:.1f}%" if normalize else str(cm[i, j])
-            for j in range(n)
-        ]
-        for i in range(n)
-    ]
+    text = [[f"{cm[i,j]}" for j in range(n)] for i in range(n)]
 
     fig = go.Figure(
         data=go.Heatmap(
-            z=cmn,
+            z=cm,
             x=class_names,
             y=class_names,
             text=text,
@@ -534,6 +522,7 @@ def _plot_confusion_matrix(cm, class_names, *, normalize=True):
     )
 
     fig.update_layout(
+        title="Class Confusion Matrix",
         xaxis=dict(title="Predicted Class", tickangle=45),
         yaxis=dict(title="True Class", autorange="reversed"),
         width=max(500, 80 * n),
@@ -543,83 +532,63 @@ def _plot_confusion_matrix(cm, class_names, *, normalize=True):
         margin=dict(l=80, r=80, t=40, b=80),
     )
 
-    st.session_state["densenet_confusion_matrix"] = fig
-    # _save_fig_to_session(fig, key_prefix="densenet_plot_confusion", dpi=300)
     return fig
 
 
-def _plot_densenet_losses(train_losses, test_losses, metrics=None):
-    """
-    Plot training/validation loss curves and, if provided, a bar chart of evaluation metrics.
-    metrics: dict like {"accuracy": 0.625, "precision": 0.828, "F1": 0.702}.
-    """
-    from plotly.subplots import make_subplots
-    import plotly.graph_objects as go
-
+def _plot_densenet_loss_curve(train_losses, test_losses):
     epochs = list(range(1, len(train_losses) + 1))
-    fig = make_subplots(
-        rows=1,
-        cols=2,
-        subplot_titles=("DenseNet training/validation loss", "Validation metrics"),
-        horizontal_spacing=0.1,
-    )
-
-    # Loss curves
+    fig = go.Figure()
     fig.add_scatter(
         x=epochs,
         y=train_losses,
         mode="lines+markers",
         name="train",
-        row=1,
-        col=1,
-        line=dict(color="#DC050C", width=2),
-        marker=dict(color="#DC050C", size=6),
+        line=dict(color="#D3E4F4", width=2),
+        marker=dict(color="#D3E4F4", size=6),
     )
-    te = [(e, v) for e, v in zip(epochs, test_losses) if v != 0]
-    e, v = zip(*te)
+    e, v = zip(*[(e, v) for e, v in zip(epochs, test_losses) if v != 0])
     fig.add_scatter(
         x=e,
         y=v,
         mode="lines+markers",
         name="val",
-        row=1,
-        col=1,
-        line=dict(color="#4EB265", width=2),
-        marker=dict(color="#4EB265", size=6),
+        line=dict(color="#004280", width=2),
+        marker=dict(color="#004280", size=6),
     )
+    fig.update_layout(
+        title="DenseNet training/validation loss",
+        xaxis_title="Epoch",
+        yaxis_title="Loss",
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        height=400,
+        width=450,
+    )
+    return fig
 
-    fig.update_xaxes(title_text="Epoch", showgrid=True, row=1, col=1)
-    fig.update_yaxes(title_text="Loss", showgrid=True, row=1, col=1)
 
-    # Metrics bar chart
+def _plot_densenet_metrics(metrics):
     labels, values = list(metrics.keys()), list(metrics.values())
+    fig = go.Figure()
     fig.add_bar(
         x=labels,
         y=values,
         text=[f"{v:.3f}" for v in values],
         textposition="outside",
         marker=dict(
-            color=["#5289C7", "#55A868", "#E8601C"],
-            line=dict(color="rgba(0,0,0,0.5)", width=2),
+            color=["#EBF1F8", "#EBF1F8", "#EBF1F8"],
+            line=dict(color="#004280", width=2),
         ),
-        opacity=0.8,
         name="metrics",
-        row=1,
-        col=2,
     )
-    fig.update_yaxes(range=[0, 1.0], row=1, col=2)
-
+    fig.update_yaxes(range=[0, 1.0])
     fig.update_layout(
-        showlegend=True,
+        title="Validation metrics",
+        plot_bgcolor="white",
+        paper_bgcolor="white",
         height=400,
-        width=900,
-        plot_bgcolor="white",  # ← inside plot area
-        paper_bgcolor="white",  # ← outside plot area
+        width=450,
     )
-
-    st.session_state["densenet_plot_losses"] = fig
-
-    # _save_fig_to_session(fig, key_prefix="densenet_plot_losses", dpi=300)
     return fig
 
 
@@ -722,18 +691,33 @@ def download_densenet_training_record():
             for n in zin.namelist():
                 zout.writestr(n, zin.read(n))
 
-            fig = ss["densenet_plot_losses"]
+            # add training plots to the zip
+            # 1) training losses
+            fig = ss["densenet_training_losses"]
             png = pio.to_image(
-                ss["densenet_plot_losses"],
+                ss["densenet_training_losses"],
                 format="png",
                 scale=3,
                 width=int(getattr(fig.layout, "width", 900) or 900),
                 height=int(getattr(fig.layout, "height", 400) or 400),
             )
-            zout.writestr("plots/densenet_losses.png", png)
+            zout.writestr("plots/densenet_training_losses.png", png)
 
+            # 2) performance metrics
+            fig = ss["densenet_training_metrics"]
             png = pio.to_image(
-                ss["densenet_confusion_matrix"],
+                ss["densenet_training_metrics"],
+                format="png",
+                scale=3,
+                width=int(getattr(fig.layout, "width", 900) or 900),
+                height=int(getattr(fig.layout, "height", 400) or 400),
+            )
+            zout.writestr("plots/densenet_performance_metrics.png", png)
+
+            # 3) confusion matrix
+            fig = ss["densenet_confusion_matrix"]
+            png = pio.to_image(
+                fig,
                 format="png",
                 scale=3,
                 width=int(getattr(fig.layout, "width", 800) or 800),

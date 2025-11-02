@@ -31,6 +31,7 @@ ss = st.session_state
 # ========== DenseNet: options (light) + dataset summary (light-ish) + training (heavy) ==========
 
 
+@st.fragment
 def _densenet_options(key_ns="train_densenet"):
     """Light controls - lives outside fragments so changing options refreshes summary."""
     st.header("Fine-tune a DenseNet classifier")
@@ -115,38 +116,37 @@ def densenet_train_fragment():
     evaluate_fine_tuned_densenet(history=history, val_gen=val_gen, classes=classes)
 
 
-def render_densenet_train_panel(key_ns: str = "train_densenet"):
-    if not _densenet_options(key_ns):
-        return
-    densenet_train_fragment()
-
-
 def show_densenet_training_plots():
     """Render saved DenseNet training plots from session state (if available)."""
-    k1, k2 = "densenet_plot_losses_png", "densenet_plot_confusion_png"
-    with st.container(border=True):
-        if (k1 not in st.session_state) and (k2 not in st.session_state):
-            st.info("No fine-tuning data available. Tune a model first.")
-            st.empty()
-            return
+    k1, k2 = "densenet_training_metrics", "densenet_training_metrics"
+    if (k1 not in st.session_state) and (k2 not in st.session_state):
+        st.info("No fine-tuning data available. Tune a model first.")
+        st.empty()
+        return
 
-        else:
+    else:
 
-            st.header("DenseNet Training Summary")
+        st.header("DenseNet Training Summary")
 
-            # button to download fine-tuned model, training data and training stats
-            download_densenet_training_record()
-            st.subheader("Training losses and validation metrics")
+        # button to download fine-tuned model, training data and training stats
+        download_densenet_training_record()
+
+        col1, col2 = st.columns(2)
+        with col1:
             st.plotly_chart(
-                st.session_state["densenet_plot_losses"],
+                st.session_state["densenet_training_losses"],
+                use_container_width=True,
+            )
+        with col2:
+            st.plotly_chart(
+                st.session_state["densenet_training_metrics"],
                 use_container_width=True,
             )
 
-            st.subheader("Class confusion matrix")
-            st.plotly_chart(
-                st.session_state["densenet_confusion_matrix"],
-                use_container_width=True,
-            )
+        st.plotly_chart(
+            st.session_state["densenet_confusion_matrix"],
+            use_container_width=True,
+        )
 
 
 # ========== Cellpose: options + training ==========
@@ -427,37 +427,36 @@ def cellpose_train_fragment():
 def show_cellpose_training_plots():
     """Render saved Cellpose plots from session state (if available)."""
     k1, k2 = "cp_losses_png", "cp_compare_iou_png"
-    with st.container(border=True):
-        if (k1 not in st.session_state) or (k2 not in st.session_state):
-            st.header("Cellpose Training Summary")
-            st.info("No fine-tuning data to show.")
-            return
+    if (k1 not in st.session_state) or (k2 not in st.session_state):
+        st.header("Cellpose Training Summary")
+        st.info("No fine-tuning data to show.")
+        return
 
+    else:
+
+        st.header("Cellpose Training Summary")
+
+        # button for downloading fine-tuned model, training data and training stats in a zip file
+        download_cellpose_training_record()
+
+        st.image(
+            st.session_state[k1],
+            use_container_width=True,
+        )
+
+        st.image(
+            st.session_state[k2],
+            use_container_width=True,
+        )
+
+        if ss.get("cp_do_gridsearch"):
+            st.dataframe(
+                st.session_state["cp_grid_results_df"],
+                hide_index=True,
+                use_container_width=True,
+            )
         else:
-
-            st.header("Cellpose Training Summary")
-
-            # button for downloading fine-tuned model, training data and training stats in a zip file
-            download_cellpose_training_record()
-
-            st.image(
-                st.session_state[k1],
-                use_container_width=True,
-            )
-
-            st.image(
-                st.session_state[k2],
-                use_container_width=True,
-            )
-
-            if ss.get("cp_do_gridsearch"):
-                st.dataframe(
-                    st.session_state["cp_grid_results_df"],
-                    hide_index=True,
-                    use_container_width=True,
-                )
-            else:
-                st.info("No hyperparameter tuning performed.")
+            st.info("No hyperparameter tuning performed.")
 
 
 def render_cellpose_train_panel(key_ns="train_cellpose"):

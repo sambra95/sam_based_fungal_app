@@ -19,5 +19,6 @@ with cellpose_tab:
     fine_tune_panel.show_cellpose_training_plots()
 with densenet_tab:
     with st.container(border=True):
-        fine_tune_panel.render_densenet_train_panel()
+        fine_tune_panel._densenet_options()
+        fine_tune_panel.densenet_train_fragment()
     fine_tune_panel.show_densenet_training_plots()
