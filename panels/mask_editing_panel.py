@@ -93,17 +93,12 @@ def render_main(*, key_ns: str = "edit"):
 
 
 def render_download_button():
-
     if not ordered_keys():
         st.info("Upload data and label masks first.")
         return False
 
     images = st.session_state.get("images", {})
     ok = ordered_keys() if images else []
-
-    # Masks & images (with overlay options)
-    def masks_images_zip(images, ok, overlay, counts):
-        return build_masks_images_zip(images, ok, overlay, counts) or b""
 
     with st.container(border=True):
         st.header("Download dataset:")
@@ -115,18 +110,19 @@ def render_download_button():
             counts = c2.checkbox(
                 "Overlay per-image class counts", False, key="dl_include_counts"
             )
-
-            normalize_for_download = c1.checkbox(
+            c1.checkbox(
                 "Normalize downloaded images", False, key="dl_normalize_download"
             )
 
-        mz = masks_images_zip(images, ok, overlay, counts) if ok else b""
-        st.download_button(
-            "Download dataset (zip)",
-            mz,
-            "masks_and_images.zip",
-            "application/zip",
-            disabled=not mz,
-            use_container_width=True,
-            key="dl_masks_images_zip_single",
-        )
+        # 🔹 Only build the dataset when the user actually clicks the button
+        if st.button("Prepare dataset ZIP", use_container_width=True):
+            mz = build_masks_images_zip(images, ok, overlay, counts)
+            st.download_button(
+                "Download dataset (zip)",
+                mz,
+                "masks_and_images.zip",
+                "application/zip",
+                use_container_width=True,
+            )
+        else:
+            st.caption("Click to prepare the dataset before downloading.")
