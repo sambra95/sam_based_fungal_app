@@ -453,7 +453,6 @@ def cellpose_train_fragment():
 
 def show_cellpose_training_plots():
     """Render saved Cellpose plots from session state (if available)."""
-    k1, k2 = "cp_losses_png", "cp_compare_iou_png"
     if "cellpose_training_losses" not in st.session_state:
         st.header("Cellpose Training Summary")
         st.info("No fine-tuning data to show.")
@@ -462,9 +461,6 @@ def show_cellpose_training_plots():
     else:
 
         st.header("Cellpose Training Summary")
-
-        # button for downloading fine-tuned model, training data and training stats in a zip file
-        # download_cellpose_training_record()
 
         col1, col2 = st.columns(2)
         with col1:
@@ -495,5 +491,9 @@ def show_cellpose_training_plots():
                 hide_index=True,
                 use_container_width=True,
             )
+
         else:
             st.info("No hyperparameter tuning performed.")
+
+        # button for downloading fine-tuned model, training data and training stats in a zip file
+        download_cellpose_training_record()

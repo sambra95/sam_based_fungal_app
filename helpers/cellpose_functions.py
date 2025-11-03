@@ -14,6 +14,7 @@ from datetime import datetime
 import pandas as pd
 from helpers.state_ops import ordered_keys
 from pathlib import Path
+import plotly.io as pio
 
 # -----------------------------------------------------#
 # ---------------- IMAGE PREPROCESSING --------------- #
@@ -378,20 +379,14 @@ def finetune_cellpose_from_records(
     return train_losses, test_losses, model_name
 
 
+def is_mask(m):
+    return isinstance(m, np.ndarray) and m.any()
+
+
 def download_cellpose_training_record():
+
     ss, ok = st.session_state, ordered_keys()
-    n_masks = sum(
-        (
-            int(np.max(m))
-            if (
-                isinstance(m := ss["images"][k].get("masks"), np.ndarray)
-                and m.ndim == 2
-                and m.size
-            )
-            else 0
-        )
-        for k in ok
-    )
+    n_masks = sum((int(len(np.unique(ss["images"][k])) - 1)) for k in ok)
 
     # collect training parameters
     params = dict(
@@ -408,8 +403,7 @@ def download_cellpose_training_record():
     # build the zip file
     buf = IO.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        if ss.get("cellpose_model_bytes"):
-            z.writestr("cellpose_model.pt", ss["cellpose_model_bytes"])
+        z.writestr("cellpose_model.pt", ss["cellpose_model_bytes"])
 
         # add table hyperparameter gridsearch results if performed
         if ss.get("cp_do_gridsearch"):
@@ -446,12 +440,50 @@ def download_cellpose_training_record():
             z.writestr(f"masks/{mask_name}", c.getvalue())
 
         # add training summary plots
-        for k, p in [
-            ("cp_losses_png", "plots/cp_losses.png"),
-            ("cp_compare_iou_png", "plots/cp_compare_iou.png"),
-        ]:
-            if k in ss:
-                z.writestr(p, ss[k])
+
+        # 1) cellpose training losses
+        fig = ss["cellpose_training_losses"]
+        png = pio.to_image(
+            ss["cellpose_training_losses"],
+            format="png",
+            scale=3,
+            width=int(getattr(fig.layout, "width", 900) or 900),
+            height=int(getattr(fig.layout, "height", 400) or 400),
+        )
+        z.writestr("plots/cellpose_training_losses.png", png)
+
+        # 2) cellpose IoU comparison
+        fig = ss["cellpose_iou_comparison"]
+        png = pio.to_image(
+            ss["cellpose_iou_comparison"],
+            format="png",
+            scale=3,
+            width=int(getattr(fig.layout, "width", 900) or 900),
+            height=int(getattr(fig.layout, "height", 400) or 400),
+        )
+        z.writestr("plots/cellpose_iou_comparison.png", png)
+
+        # 3) cellpose base model counts vs true
+        fig = ss["cellpose_original_counts_comparison"]
+        png = pio.to_image(
+            ss["cellpose_original_counts_comparison"],
+            format="png",
+            scale=3,
+            width=int(getattr(fig.layout, "width", 900) or 900),
+            height=int(getattr(fig.layout, "height", 400) or 400),
+        )
+        z.writestr("plots/cellpose_original_counts_comparison.png", png)
+
+        # 4) cellpose tuned model counts vs true
+        fig = ss["cellpose_tuned_counts_comparison"]
+        png = pio.to_image(
+            ss["cellpose_tuned_counts_comparison"],
+            format="png",
+            scale=3,
+            width=int(getattr(fig.layout, "width", 900) or 900),
+            height=int(getattr(fig.layout, "height", 400) or 400),
+        )
+        z.writestr("plots/cellpose_tuned_counts_comparison.png", png)
 
     st.download_button(
         "Download Cellpose model, dataset and training metrics (ZIP)",

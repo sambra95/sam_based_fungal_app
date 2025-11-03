@@ -127,7 +127,7 @@ def render_images_form():
     ss, ok = st.session_state, sorted(st.session_state.images)
 
     def is_mask(m):
-        return isinstance(m, np.ndarray) and m.ndim == 2 and m.any()
+        return isinstance(m, np.ndarray) and m.any()
 
     rows = []
     for k in ok:
