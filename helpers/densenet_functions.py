@@ -642,21 +642,18 @@ def build_patchset_zip_from_session(patch_size: int = 64) -> bytes | None:
     return buf.getvalue()
 
 
-def download_densenet_training_record():
+def _build_densenet_zip_bytes(psize):
+    """Assemble the DenseNet training ZIP from session state. Returns bytes or None."""
     ss = st.session_state
-    psize = int(ss.get("dn_input_size"))
     pzip = build_patchset_zip_from_session(psize)
     if not pzip:
-        st.warning("No patches available.")
-        return
+        return None
 
     with ZipFile(io.BytesIO(pzip)) as zin:
-
-        # collect training parameters
+        # Training parameters
         labels = pd.read_csv(io.BytesIO(zin.read("cell_patch_labels.csv")))
         params = dict(
-            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            input_size=psize,
+            input_size=int(psize),
             epochs=int(ss.get("dn_max_epoch")),
             batch_size=int(ss.get("dn_batch_size")),
             val_split=float(ss.get("dn_val_split")),
@@ -664,22 +661,19 @@ def download_densenet_training_record():
             classes=labels["label"].nunique(),
         )
 
-        # create the zip file
         buf = io.BytesIO()
         with ZipFile(buf, "w", ZIP_DEFLATED) as zout:
-
-            # add models to the zip file
+            # Add fine-tuned model if present
             if ss.get("densenet_model") is not None:
-                # Keras 3: save to a real filepath with .keras extension
                 tmp = tempfile.NamedTemporaryFile(suffix=".keras", delete=False)
                 tmp_path = tmp.name
                 tmp.close()
-                ss["densenet_model"].save(tmp_path)  # format inferred from ".keras"
+                ss["densenet_model"].save(tmp_path)
                 with open(tmp_path, "rb") as f:
                     zout.writestr("densenet_finetuned.keras", f.read())
                 os.remove(tmp_path)
 
-            # add training parameters to zip file
+            # Training params CSV
             zout.writestr(
                 "training_params.csv",
                 pd.Series(params)
@@ -688,48 +682,31 @@ def download_densenet_training_record():
                 .to_csv(index=False),
             )
 
+            # Include original patchset files
             for n in zin.namelist():
                 zout.writestr(n, zin.read(n))
 
-            # add training plots to the zip
-            # 1) training losses
-            fig = ss["densenet_training_losses"]
-            png = pio.to_image(
-                ss["densenet_training_losses"],
-                format="png",
-                scale=3,
-                width=int(getattr(fig.layout, "width", 900) or 900),
-                height=int(getattr(fig.layout, "height", 400) or 400),
-            )
-            zout.writestr("plots/densenet_training_losses.png", png)
+            # Plots
+            def _add_png(fig_key, out_path, default_w=900, default_h=400):
+                fig = ss[fig_key]
+                png = pio.to_image(
+                    fig,
+                    format="png",
+                    scale=3,
+                    width=int(getattr(fig.layout, "width", default_w) or default_w),
+                    height=int(getattr(fig.layout, "height", default_h) or default_h),
+                )
+                zout.writestr(out_path, png)
 
-            # 2) performance metrics
-            fig = ss["densenet_training_metrics"]
-            png = pio.to_image(
-                ss["densenet_training_metrics"],
-                format="png",
-                scale=3,
-                width=int(getattr(fig.layout, "width", 900) or 900),
-                height=int(getattr(fig.layout, "height", 400) or 400),
+            _add_png("densenet_training_losses", "plots/densenet_training_losses.png")
+            _add_png(
+                "densenet_training_metrics", "plots/densenet_performance_metrics.png"
             )
-            zout.writestr("plots/densenet_performance_metrics.png", png)
-
-            # 3) confusion matrix
-            fig = ss["densenet_confusion_matrix"]
-            png = pio.to_image(
-                fig,
-                format="png",
-                scale=3,
-                width=int(getattr(fig.layout, "width", 800) or 800),
-                height=int(getattr(fig.layout, "height", 600) or 600),
+            _add_png(
+                "densenet_confusion_matrix",
+                "plots/densenet_confusion.png",
+                default_w=800,
+                default_h=600,
             )
-            zout.writestr("plots/densenet_confusion.png", png)
 
-    st.download_button(
-        "Download fine-tuned DenseNet model, dataset and training metrics",
-        data=buf.getvalue(),
-        file_name=f"densenet_training_{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip",
-        mime="application/zip",
-        use_container_width=True,
-        type="primary",
-    )
+    return buf.getvalue()

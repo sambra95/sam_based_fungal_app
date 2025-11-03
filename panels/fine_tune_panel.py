@@ -15,8 +15,8 @@ from helpers.densenet_functions import (
     load_labeled_patches_from_session,
     fine_tune_densenet,
     evaluate_fine_tuned_densenet,
-    download_densenet_training_record,
     _plot_densenet_loss_curve,
+    _build_densenet_zip_bytes,
 )
 from helpers.cellpose_functions import (
     finetune_cellpose_from_records,
@@ -118,6 +118,8 @@ def densenet_train_fragment():
     # evaluate the fine tuned densenet model on validation dataset
     evaluate_fine_tuned_densenet(history=history, val_gen=val_gen, classes=classes)
 
+    ss["dn_zip_bytes"] = _build_densenet_zip_bytes(input_size)
+
 
 def show_densenet_training_plots():
     """Render saved DenseNet training plots from session state (if available)."""
@@ -130,9 +132,6 @@ def show_densenet_training_plots():
     else:
 
         st.header("DenseNet Training Summary")
-
-        # button to download fine-tuned model, training data and training stats
-        download_densenet_training_record()
 
         col1, col2 = st.columns(2)
         with col1:
@@ -149,6 +148,15 @@ def show_densenet_training_plots():
         st.plotly_chart(
             st.session_state["densenet_confusion_matrix"],
             use_container_width=True,
+        )
+
+        st.download_button(
+            "Download fine-tuned DenseNet model, dataset and training metrics",
+            data=ss["dn_zip_bytes"],
+            file_name="densenet_training.zip",
+            mime="application/zip",
+            use_container_width=True,
+            type="primary",
         )
 
 
