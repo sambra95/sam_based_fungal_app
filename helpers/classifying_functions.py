@@ -1,7 +1,6 @@
 # panels/classify_cells.py
 import numpy as np
 import streamlit as st
-import numpy as np
 
 from helpers.state_ops import ordered_keys, current
 from helpers.densenet_functions import classify_cells_with_densenet
@@ -233,7 +232,7 @@ def _row(name: str, count: int, key: str, mode_ns: str = "side"):
     def _select():
         # pick this class AND switch the main panel to Assign class mode
         st.session_state["pending_class"] = name
-        st.session_state[f"interaction_mode"] = "Assign class"
+        st.session_state["interaction_mode"] = "Assign class"
 
     c4.button(
         "Select",

@@ -1,4 +1,6 @@
-import os, tempfile, hashlib
+import os
+import tempfile
+import hashlib
 import numpy as np
 import streamlit as st
 import cv2
@@ -6,11 +8,9 @@ from cellpose import core, io, models, train, metrics
 import torch
 from PIL import Image
 import io as IO
-import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_absolute_error
 import zipfile
-from datetime import datetime
 import pandas as pd
 from helpers.state_ops import ordered_keys
 from pathlib import Path
@@ -188,10 +188,8 @@ def segment_rec_with_cellpose(
 
 import plotly.graph_objects as go
 import numpy as np
-from sklearn.metrics import r2_score, mean_absolute_error
 
 import numpy as np
-from cellpose import models, metrics
 
 
 def compute_model_ious(images, masks, model, channels):

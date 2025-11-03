@@ -291,14 +291,14 @@ def cellpose_hyperparameters_fragment():
     # Channels (two ints)
     st.number_input(
         "Channel 1",
-        value=st.session_state.get("cp_ch1", 0),
+        value=st.session_state.get("cp_ch1"),
         step=1,
         format="%d",
         key="cp_ch1",
     )
     st.number_input(
         "Channel 2",
-        value=st.session_state.get("cp_ch2", 0),
+        value=st.session_state.get("cp_ch2"),
         step=1,
         format="%d",
         key="cp_ch2",
@@ -370,11 +370,11 @@ def box_tools_fragment(key_ns="side"):
     c1, c2 = row.columns([1, 1])
 
     if c1.button("Draw box", use_container_width=True, key=f"{key_ns}_draw_boxes"):
-        st.session_state[f"interaction_mode"] = "Draw box"
+        st.session_state["interaction_mode"] = "Draw box"
         st.rerun()
 
     if c2.button("Remove box", use_container_width=True, key=f"{key_ns}_remove_boxes"):
-        st.session_state[f"interaction_mode"] = "Remove box"
+        st.session_state["interaction_mode"] = "Remove box"
         st.rerun()
 
     row = st.container()
@@ -416,11 +416,11 @@ def mask_tools_fragment(key_ns="side"):
     c1, c2 = row.columns([1, 1])
 
     if c1.button("Draw mask", use_container_width=True, key=f"{key_ns}_draw_masks"):
-        st.session_state[f"interaction_mode"] = "Draw mask"
+        st.session_state["interaction_mode"] = "Draw mask"
         st.rerun()
 
     if c2.button("Remove mask", use_container_width=True, key=f"{key_ns}_remove_masks"):
-        st.session_state[f"interaction_mode"] = "Remove mask"
+        st.session_state["interaction_mode"] = "Remove mask"
         st.rerun()
 
     row = st.container()

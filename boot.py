@@ -1,7 +1,5 @@
 # boot.py (new small helper)
-import os
 import streamlit as st
-from helpers.state_ops import ensure_global_state
 
 
 @st.cache_resource(show_spinner=False)

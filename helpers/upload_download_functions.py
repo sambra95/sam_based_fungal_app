@@ -6,7 +6,6 @@ import tifffile as tiff
 import streamlit as st
 from zipfile import ZipFile
 from pathlib import Path
-import streamlit as st
 
 from helpers.state_ops import (
     ordered_keys,
@@ -167,16 +166,11 @@ def render_images_form():
 # --------------------------------------
 
 
-import io
-from pathlib import Path
-from zipfile import ZipFile, ZIP_DEFLATED
-import numpy as np
+from zipfile import ZIP_DEFLATED
 import streamlit as st
-from PIL import Image, ImageDraw
-import tifffile as tiff
+from PIL import ImageDraw
 import pandas as pd
 
-from helpers.state_ops import ordered_keys
 from helpers.classifying_functions import classes_map_from_labels, palette_from_emojis
 from helpers.mask_editing_functions import composite_over_by_class
 from helpers.cell_metrics_functions import (

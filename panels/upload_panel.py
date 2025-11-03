@@ -3,7 +3,9 @@ from helpers.state_ops import (
     ordered_keys,
 )
 from helpers.upload_download_functions import _process_uploads, render_images_form
-import os, tempfile, hashlib
+import os
+import tempfile
+import hashlib
 
 
 def render_main():
@@ -22,7 +24,7 @@ def render_main():
 
             up_key = f"u_all_np_{ss.get('uploader_nonce', 0)}"
             files = st.file_uploader(
-                f" ",
+                " ",
                 type=["tif", "tiff", "npy", "png", "jpg", "jpeg"],
                 accept_multiple_files=True,
                 key=up_key,

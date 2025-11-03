@@ -2,10 +2,7 @@
 import streamlit as st
 
 from helpers.state_ops import ordered_keys
-from helpers.densenet_functions import load_labeled_patches_from_session
 from helpers.upload_download_functions import (
-    build_masks_images_zip,
-    build_patchset_zip_from_session,
     _build_cell_metrics_zip,
 )
 

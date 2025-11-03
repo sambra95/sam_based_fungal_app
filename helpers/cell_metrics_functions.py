@@ -59,7 +59,8 @@ def _violin(df: pd.DataFrame, value_col: str):
 
 
 def _bar(df: pd.DataFrame, value_col: str):
-    import seaborn as sns, matplotlib.pyplot as plt
+    import seaborn as sns
+    import matplotlib.pyplot as plt
 
     sub = df.copy()
     sub["label"] = sub["mask label"].replace("No label", None).fillna("Unlabelled")
