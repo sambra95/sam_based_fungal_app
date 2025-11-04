@@ -1,5 +1,6 @@
 from boot import common_boot
 from panels import upload_panel
+import streamlit as st
 
 common_boot()
 
