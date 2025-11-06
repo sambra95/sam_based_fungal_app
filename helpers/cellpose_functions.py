@@ -446,10 +446,12 @@ def build_cellpose_zip_bytes():
         )
         add_plotly_as_png_to_zip(
             "cellpose_original_counts_comparison",
+            z,
             "plots/cellpose_original_counts_comparison.png",
         )
         add_plotly_as_png_to_zip(
             "cellpose_tuned_counts_comparison",
+            z,
             "plots/cellpose_tuned_counts_comparison.png",
         )
 

@@ -101,7 +101,7 @@ def create_new_record_with_image(uploaded_file):
     m = st.session_state.name_to_key
     imgs = st.session_state.images
 
-    # already have it → focus it
+    # if an image with the same name is already uploaded:
     if name in m:
         st.session_state.current_key = m[name]
         return
@@ -143,7 +143,7 @@ def render_images_form():
         rows.append(
             {
                 "Image": rec.get("name", k),
-                "Masks?": "✅" if has else "❌",
+                "Mask Present": "✅" if has else "❌",
                 "Number of Masks": n,
                 "Labelled Masks": f"{nl}/{n}",
                 "Remove": False,
