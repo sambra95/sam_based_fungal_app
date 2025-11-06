@@ -559,7 +559,7 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
 
         jump = st.slider(
             "Image index",
-            1,
+            0,
             len(ok),
             rec_idx + 1,
             key=f"{key_ns}_jump",
