@@ -18,8 +18,10 @@ def ensure_global_state() -> None:
     ss.setdefault("densenet_ckpt_name", None)
     ss.setdefault("side_new_label", "")
     ss.setdefault("show_overlay", True)
+    st.session_state.setdefault("show_normalized", False)
     ss.setdefault("interaction_mode", "Remove mask")
     ss.setdefault("side_interaction_mode", "Draw box")
+    ss.setdefault("skipped_files", [])
 
     # cellpose model training defaults
     ss.setdefault("cyto_to_train", "Cyto3")
@@ -60,6 +62,7 @@ def ensure_global_state() -> None:
     # class defaults
     ss.setdefault("all_classes", ["No label"])
     ss.setdefault("side_current_class", ss["all_classes"][0])
+    ss.setdefault("cp_grid_results_df", None)
 
 
 def stem(p: str) -> str:

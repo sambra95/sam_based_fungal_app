@@ -629,6 +629,7 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
 
         # click and hold to draw boxes on the image
         elif mode == "Draw box":
+            MIN_BOX_SIZE = 10
             bg = Image.fromarray(display_for_ui).convert("RGB")
             initial_json = render_sam2_boxes(rec["boxes"], scale=scale)
             num_initial = len(initial_json.get("objects", []))
@@ -646,12 +647,14 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
                 initial_drawing=initial_json,
                 key=f"{key_ns}_canvas_pred_{st.session_state['pred_canvas_nonce']}",
             )
+
             if canvas_result.json_data:
                 objs = canvas_result.json_data.get("objects", [])
                 added_any = False
                 for obj in objs[num_initial:]:
                     if obj.get("type") != "rect":
                         continue
+
                     left = float(obj.get("left", 0))
                     top = float(obj.get("top", 0))
                     width = float(obj.get("width", 0)) * float(obj.get("scaleX", 1.0))
@@ -660,6 +663,8 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
                     y0 = int(round(top / scale))
                     x1 = int(round((left + width) / scale))
                     y1 = int(round((top + height) / scale))
+
+                    # Clip to image bounds
                     x0 = max(0, min(rec["W"] - 1, x0))
                     x1 = max(0, min(rec["W"], x1))
                     y0 = max(0, min(rec["H"] - 1, y0))
@@ -668,8 +673,16 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
                         x0, x1 = x1, x0
                     if y1 < y0:
                         y0, y1 = y1, y0
+
+                    # --- Ignore small boxes ---
+                    box_w = x1 - x0
+                    box_h = y1 - y0
+                    if box_w < MIN_BOX_SIZE or box_h < MIN_BOX_SIZE:
+                        continue  # skip small rectangles
+
                     rec["boxes"].append((x0, y0, x1, y1))
                     added_any = True
+
                 if added_any:
                     st.rerun()
 

@@ -12,10 +12,16 @@ def render_main():
 
     ss = st.session_state
 
-    # ---------- Layout: 2 columns ----------
+    # briefly show any skipped files that threw an error
+    skipped = ss.pop("skipped_files", None)
+    if skipped:
+        st.toast(
+            f"**The following files could not be uploaded**: {', '.join(skipped)}",
+        )
+
+    # ---------- Layout: 3 columns ----------
     col1, col2, col3 = st.columns([1, 1, 1])
 
-    # ---------- LEFT: uploads & summary ----------
     with col1:
         # ---- single uploader: images & masks ----
 
@@ -40,7 +46,7 @@ def render_main():
             ss["mask_suffix"] = mask_suffix.strip() or "_masks"
 
             if files:
-                process_uploads(files, mask_suffix)
+                ss["skipped_files"] = process_uploads(files, mask_suffix) or []
                 ss["uploader_nonce"] = ss.get("uploader_nonce", 0) + 1
                 st.rerun()
     with col2:

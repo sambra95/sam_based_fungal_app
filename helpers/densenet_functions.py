@@ -567,7 +567,7 @@ def plot_densenet_loss_curve(train_losses, test_losses):
 
 def plot_densenet_metrics(metrics):
     labels, values = list(metrics.keys()), list(metrics.values())
-    fig = go.Figure()
+    fig = go.Figure(layout=dict(barcornerradius=10))
     fig.add_bar(
         x=labels,
         y=values,

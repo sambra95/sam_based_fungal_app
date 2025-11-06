@@ -10,20 +10,22 @@ from helpers.cell_metrics_functions import (
 )
 
 
-def render_sidebar():
+@st.fragment
+def render_plotting_options():
 
     if not ordered_keys():
         return False
 
-    # toggle between violin and barplot types
-    current_plot_type = st.session_state.get("analysis_plot_type", "Violin")
-    # render a toggle that switches between the two modes
-    toggle_value = st.toggle(
-        f"Plot type: {current_plot_type}",
-        value=(current_plot_type == "Violin"),
+    # choose plot type
+    plot_type = st.radio(
+        "Plot type",
+        ["Violin", "Bar"],
+        horizontal=True,
+        index=(
+            0 if st.session_state.get("analysis_plot_type", "Violin") == "Violin" else 1
+        ),
     )
-    # update session state to keep it consistent
-    st.session_state.analysis_plot_type = "Violin" if toggle_value else "Bar"
+    st.session_state.analysis_plot_type = plot_type
 
     # toggle overlay of datapoints in the plots
     overlay_points = st.toggle(
@@ -79,7 +81,7 @@ def render_sidebar():
     )
 
 
-def render_main():
+def render_plotting_main():
 
     if not ordered_keys():
         st.info("Upload data and label masks first.")

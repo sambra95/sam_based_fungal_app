@@ -7,39 +7,38 @@ from helpers.densenet_functions import classify_cells_with_densenet
 
 ss = st.session_state
 
-PALETTE_HEX = [
-    "#DC050C",  # 26
-    "#5289C7",  # 12
-    "#4EB265",  # 15
-    "#F7F056",  # 18
-    "#882E72",  # 9
-    "#E8601C",  # 24
-    "#D1BBD7",  # 3
-    "#90C987",  # 16
-    "#F1932D",  # 22
-    "#CAE0AB",  # 17
-    "#F6C141",  # 20
+class_colour_hexes = [
+    "#DC050C",
+    "#5289C7",
+    "#4EB265",
+    "#F7F056",
+    "#882E72",
+    "#E8601C",
+    "#D1BBD7",
+    "#90C987",
+    "#F1932D",
+    "#CAE0AB",
+    "#F6C141",
 ]
 
 
-def _hex_to_rgb01(hx: str) -> tuple[float, float, float]:
+def hex_to_rgb01(hx: str) -> tuple[float, float, float]:
     return tuple(int(hx[i : i + 2], 16) / 255.0 for i in (1, 3, 5))
 
 
 def color_hex_for(name: str) -> str:
     """
     Deterministic, unique color per class name using session-backed mapping.
-    Reuses the palette without hashing collisions.
     """
-    if not name or name == "No label":
-        return "#777777"
+    if name == "No label":
+        return "#E5E5E5"
     cmap = st.session_state.setdefault("class_colors", {})
     if name not in cmap:
         # pick the first palette color not currently used; wrap if all are used
         used = set(cmap.values())
-        choice = next((hx for hx in PALETTE_HEX if hx not in used), None)
+        choice = next((hx for hx in class_colour_hexes if hx not in used), None)
         if choice is None:
-            choice = PALETTE_HEX[len(cmap) % len(PALETTE_HEX)]
+            choice = class_colour_hexes[len(cmap) % len(class_colour_hexes)]
         cmap[name] = choice
     return cmap[name]
 
@@ -54,21 +53,19 @@ def color_chip_md(hex_color: str, size: int = 14) -> str:
 
 
 def rename_class_from_input(old_key: str, new_key: str):
-    """Callback: read selected old class and typed new class from session_state and rename."""
-
     ss = st.session_state
     old = ss.get(old_key)
     new = (ss.get(new_key, "") or "").strip()
     if not old or not new or old == new:
         return
 
-    # Keep the selection stable across reruns:
-    # set the selectbox's value to the *new* name so Streamlit won't
-    # fall back to the first option when `old` disappears from options.
-    ss[old_key] = new
+    # Clear the input box
     ss[new_key] = ""
 
-    # Validate + apply (this may call st.rerun() internally)
+    # Stash the desired selectbox value for the next run
+    ss[f"{old_key}__next_value"] = new
+
+    # Apply the rename (this will st.rerun())
     rename_class_everywhere(old, new)
 
 
@@ -133,21 +130,13 @@ def rename_class_everywhere(old_name: str, new_name: str):
     if ss.get("side_current_class") == old_name:
         ss["side_current_class"] = new_name
 
-    # --- Update emojis ---
-    emap = ss.setdefault("class_emojis", {})
-    if target_exists:
-        # We’re merging into an existing class; keep the target’s emoji,
-        # drop the old one if present.
-        if old_name in emap:
-            emap.pop(old_name, None)
+    # after emoji handling
+    cmap = ss.setdefault("class_colors", {})
+    if new_name in ss["all_classes"]:  # target_exists logic above already computed
+        cmap.pop(old_name, None)  # merge: keep target color
     else:
-        # True rename: carry over old emoji if present, otherwise assign fresh later
-        if old_name in emap:
-            emap[new_name] = emap.pop(old_name)
-        else:
-            # touch to ensure emoji assignment exists for the new name
-            _ = color_hex_for(new_name)
-
+        if old_name in cmap:
+            cmap[new_name] = cmap.pop(old_name)
     st.rerun()
 
 
@@ -161,6 +150,9 @@ def remove_class_everywhere(name: str):
       - emoji map st.session_state['class_emojis'] (removes entry)
     """
     ss = st.session_state
+
+    ss.setdefault("class_emojis", {}).pop(name, None)
+    ss.setdefault("class_colors", {}).pop(name, None)  # free color
 
     # Ensure class list exists and cant remove "No label"
     if name == "No label":
@@ -198,7 +190,7 @@ def create_colour_palette(class_names):
     for n in class_names:
         if not n or n == "No label":
             continue
-        pal[n] = _hex_to_rgb01(color_hex_for(n))
+        pal[n] = hex_to_rgb01(color_hex_for(n))
     return pal
 
 
@@ -218,15 +210,12 @@ def classes_map_from_labels(masks, labels):
 def create_row(name: str, count: int, key: str, mode_ns: str = "side"):
     # icon | name | count | select |
     c1, c2, c3, c4 = st.columns([1, 5, 2, 3])
-    if name == "No label":
-        c1.write(" ")
-    else:
-        c1.markdown(color_chip_md(color_hex_for(name)), unsafe_allow_html=True)
+    c1.markdown(color_chip_md(color_hex_for(name)), unsafe_allow_html=True)
     c2.write(f"**{name}**")
     c3.write(str(count))
 
     def _select():
-        # pick this class AND switch the main panel to Assign class mode
+        # pick this class and switch the main panel to Assign class mode
         st.session_state["pending_class"] = name
         st.session_state["interaction_mode"] = "Assign class"
 
@@ -334,6 +323,12 @@ def class_manage_fragment(key_ns="side"):
     ss = st.session_state
     labels = ss.setdefault("all_classes", ["No label"])
 
+    # Apply any pending rename select value before creating widgets
+    pending_key = f"{key_ns}_rename_from__next_value"
+    pending_val = ss.pop(pending_key, None)
+    if pending_val is not None:
+        ss[f"{key_ns}_rename_from"] = pending_val
+
     st.markdown("### Add and remove classes")
 
     # --- Add new class ---
@@ -353,7 +348,7 @@ def class_manage_fragment(key_ns="side"):
             key=f"{key_ns}_delete_label",
         )
         if del_class != "(Select a class)":
-            remove_class_everywhere(del_class)()
+            remove_class_everywhere(del_class)
             st.success(f"Deleted class: {del_class}")
             st.rerun()
     else:
@@ -369,7 +364,7 @@ def class_manage_fragment(key_ns="side"):
             "New label",
             key=f"{key_ns}_rename_to",
             placeholder="Type the new class name and press Enter",
-            on_change=rename_class_from_input(
+            on_change=lambda: rename_class_from_input(
                 f"{key_ns}_rename_from", f"{key_ns}_rename_to"
             ),
         )

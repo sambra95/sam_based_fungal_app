@@ -9,7 +9,7 @@ secret.txt
 *.log
 *.tif
 *.npy
-**/.DS_Store
+*.DS_Store
 
 # Ignore compiled Python files
 __pycache__/
@@ -26,3 +26,6 @@ helpers/.DS_Store
 panels/.DS_Store
 intro_images/intro_imags_ppt.pptx
 panels/.DS_Store
+intro_images/ChatGPT Image Nov 4, 2025, 06_34_18 PM.png
+demo_data/classifier.keras
+demo_data/cellpose_model.pt

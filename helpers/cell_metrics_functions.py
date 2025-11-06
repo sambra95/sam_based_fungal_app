@@ -1,35 +1,42 @@
 import io
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
-import seaborn as sns
 import streamlit as st
 from helpers.state_ops import ordered_keys
 from skimage.measure import regionprops
 from zipfile import ZipFile
 from pathlib import Path
 from zipfile import ZIP_DEFLATED
+from helpers.classifying_functions import color_hex_for
+
+
+def _hex_for_plot_label(label: str) -> str:
+    """
+    Map plotting labels to the same hex used for masks.
+    'Unlabelled' and 'No label' both use the reserved 'No label' color.
+    """
+    if label in (None, "", "Unlabelled", "No label"):
+        return color_hex_for("No label")
+    return color_hex_for(label)
 
 
 def plot_violin(df: pd.DataFrame, value_col: str):
-    sub = df.copy()
-    sub["label"] = sub["mask label"].replace("No label", None).fillna("Unlabelled")
-    order = sorted(sub["label"].unique(), key=lambda x: (x != "Unlabelled", str(x)))
+    df["label"] = df["mask label"].replace("No label", None).fillna("Unlabelled")
+    order = sorted(df["label"].unique(), key=lambda x: (x != "Unlabelled", str(x)))
 
-    palette = px.colors.qualitative.Set2
-    color_map = {lab: palette[i % len(palette)] for i, lab in enumerate(order)}
+    # use mask colors
+    color_map = {lab: _hex_for_plot_label(lab) for lab in order}
 
     show_points = bool(st.session_state.get("overlay_datapoints", False))
-
     fig = go.Figure()
 
     for lab in order:
-        vals = sub.loc[sub["label"] == lab, value_col]
+        idx = df["label"] == lab
+        vals = df.loc[idx, value_col]
         x_vals = [lab] * len(vals)
 
-        # 1) VIOLIN SHAPE (non-interactive, no points)
+        # violin body with the mask-matched color
         fig.add_trace(
             go.Violin(
                 x=x_vals,
@@ -41,14 +48,17 @@ def plot_violin(df: pd.DataFrame, value_col: str):
                 line_color="black",
                 fillcolor=color_map[lab],
                 opacity=0.85,
-                points=False,  # no points from this trace
-                hoverinfo="skip",  # no hover on the shape
+                points=False,
+                hoverinfo="skip",
                 showlegend=False,
             )
         )
 
-        # 2) POINTS-ONLY VIOLIN (interactive, transparent body/outline)
         if show_points and len(vals) > 0:
+            imgs = df.loc[idx, "image"].astype(str).to_numpy()
+            masks = df.loc[idx, "mask #"].astype(str).to_numpy()
+            texts = [f"{im}_patch{mk}" for im, mk in zip(imgs, masks)]
+
             fig.add_trace(
                 go.Violin(
                     x=x_vals,
@@ -57,18 +67,21 @@ def plot_violin(df: pd.DataFrame, value_col: str):
                     legendgroup=str(lab),
                     box_visible=False,
                     meanline_visible=False,
-                    line_color="rgba(0,0,0,0)",  # hide outline
-                    fillcolor="rgba(0,0,0,0)",  # no fill
+                    line_color="rgba(0,0,0,0)",
+                    fillcolor="rgba(0,0,0,0)",
                     opacity=1.0,
-                    points="all",  # show points
-                    pointpos=0,  # centered over violin
-                    jitter=0.25,  # horizontal spread
+                    points="all",
+                    pointpos=0,
+                    jitter=0.25,
                     marker=dict(
                         size=4,
                         opacity=0.8,
                         color="black",
                         line=dict(width=0.3, color="black"),
                     ),
+                    text=texts,  # per-point labels
+                    hovertemplate="Image: %{text}<extra></extra>",
+                    hoveron="points",
                     showlegend=False,
                 )
             )
@@ -90,45 +103,89 @@ def plot_violin(df: pd.DataFrame, value_col: str):
 
 
 def plot_bar(df: pd.DataFrame, value_col: str):
-    sub = df.copy()
-    sub["label"] = sub["mask label"].replace("No label", None).fillna("Unlabelled")
-    order = sorted(sub["label"].unique(), key=lambda x: (x != "Unlabelled", str(x)))
-    pal = sns.color_palette("Set2", n_colors=len(order))
+    df["label"] = df["mask label"].replace("No label", None).fillna("Unlabelled")
+    order = sorted(df["label"].unique(), key=lambda x: (x != "Unlabelled", str(x)))
+    title_y = value_col.replace("_", " ").title()
 
-    fig, ax = plt.subplots(figsize=(8, 5), dpi=150)
-    sns.barplot(
-        data=sub, x="label", y=value_col, order=order, palette=pal, errorbar="sd", ax=ax
+    # numeric x positions and colors
+    xpos = np.arange(len(order), dtype=float)
+    colors = [_hex_for_plot_label(lab) for lab in order]
+
+    # bar means + SD
+    g = df.groupby("label")[value_col]
+    means = g.mean().reindex(order).to_numpy()
+    sds = g.std().reindex(order).fillna(0).to_numpy()
+
+    bar = go.Bar(
+        x=xpos,
+        y=means,
+        marker_color=colors,
+        marker_line=dict(color="black", width=1),
+        error_y=dict(type="data", array=sds, visible=True),
+        opacity=0.9,
+        showlegend=False,
+        hovertemplate="<b>%{x}</b><br>" + title_y + ": %{y:.2f}<extra></extra>",
     )
-    for p in ax.patches:
-        p.set_edgecolor("black")
-        p.set_linewidth(0.8)
 
-    # Only overlay individual points if toggle is on
-    if st.session_state["overlay_datapoints"]:
-        sns.stripplot(
-            data=sub,
-            x="label",
-            y=value_col,
-            order=order,
-            color="k",
-            alpha=0.6,
-            size=3,
-            jitter=0.25,
-            linewidth=0.3,
-            edgecolor="black",
-            ax=ax,
+    traces = add_data_points_to_plot(bar, order, df, value_col, xpos)
+
+    fig = go.Figure(traces, layout=dict(barcornerradius=10))
+    fig.update_layout(
+        xaxis=dict(
+            tickvals=xpos,
+            ticktext=order,
+            showline=True,
+            linecolor="black",
+            gridcolor="rgba(0,0,0,0.1)",
+        ),
+        yaxis=dict(
+            title=title_y, showline=True, linecolor="black", gridcolor="rgba(0,0,0,0.1)"
+        ),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        margin=dict(l=40, r=40, t=40, b=40),
+        bargap=0.3,
+        height=500,
+        showlegend=False,
+    )
+
+    return f"bar_{value_col.replace(' ', '_')}.png", fig
+
+
+def add_data_points_to_plot(plot, order, sub, value_col, xpos):
+    # jittered points per category (optional)
+    traces = [plot]
+    for i, lab in enumerate(order):
+        idx = sub["label"] == lab
+        ys = sub.loc[idx, value_col].to_numpy()
+        if ys.size == 0:
+            continue
+
+        imgs = sub.loc[idx, "image"].astype(str).to_numpy()
+        masks = sub.loc[idx, "mask #"].astype(str).to_numpy()
+        texts = [f"{im}_patch{mk}" for im, mk in zip(imgs, masks)]
+
+        rng = np.random.default_rng(42 + i)  # deterministic jitter per label
+        xj = np.full(ys.shape, xpos[i], dtype=float) + rng.uniform(-0.20, 0.20, ys.size)
+
+        traces.append(
+            go.Scatter(
+                x=xj,
+                y=ys,
+                mode="markers",
+                showlegend=False,
+                marker=dict(
+                    size=6,
+                    opacity=0.75,
+                    color="black",
+                    line=dict(width=0.3, color="black"),
+                ),
+                text=texts,
+                hovertemplate="Image: %{text}<extra></extra>",
+            )
         )
 
-    ax.set_xlabel("Label")
-    ax.set_ylabel(value_col.replace("_", " ").title())
-    ax.grid(axis="y", linestyle="--", alpha=0.3)
-    sns.despine(ax=ax)
-
-    st.pyplot(fig)
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return f"bar_{value_col.replace(' ', '_')}.png", buf.getvalue()
+    return traces
 
 
 def build_analysis_df():

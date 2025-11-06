@@ -222,7 +222,7 @@ def plot_iou_comparison(base_ious, tuned_ious):
         np.std(tuned_ious, ddof=1) if len(tuned_ious) > 1 else 0.0,
     ]
 
-    fig = go.Figure()
+    fig = go.Figure(layout=dict(barcornerradius=10))
     fig.add_bar(
         x=x,
         y=means,
@@ -371,7 +371,7 @@ def finetune_cellpose(
     return train_losses, test_losses, model_name
 
 
-def is_mask(m):
+def is_not_empty_mask(m):
     return isinstance(m, np.ndarray) and m.any()
 
 
@@ -446,10 +446,12 @@ def build_cellpose_zip_bytes():
         )
         add_plotly_as_png_to_zip(
             "cellpose_original_counts_comparison",
+            z,
             "plots/cellpose_original_counts_comparison.png",
         )
         add_plotly_as_png_to_zip(
             "cellpose_tuned_counts_comparison",
+            z,
             "plots/cellpose_tuned_counts_comparison.png",
         )
 
