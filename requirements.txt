@@ -1,19 +1,20 @@
 numpy
 pandas
-cellpose==3.1.1.2 
+cellpose~=3.1.1.2 
 opencv-python
 opencv-contrib-python
 matplotlib
 Pillow
-scikit-learn
+scikit-learn~=1.7.2
 scikit-image~=0.25
-streamlit
+streamlit==1.40.2
 tensorflow<2.20
 keras==3.10 # 3.11 does not work, which might be a bit restrictive
 torch>=2.5.1
 torchvision>=0.20.1
 seaborn
 sam2
-git+https://github.com/SunOner/streamlit-drawable-canvas.git@develop
+streamlit-drawable-canvas
 streamlit-image-coordinates
-tifffile
+tifffile~=2024.9.20
+plotly~=6.3.1
