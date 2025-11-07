@@ -1,31 +1,36 @@
 # app_hydralit.py
 import os
 import runpy
-import streamlit as st
-from hydralit import HydraApp
-import hydralit_components as hc
 
-# ------------------ App setup ------------------ #
-st.set_page_config(page_title="Mycoscope", page_icon="🧬", layout="wide")
+import streamlit as st
 
 # Your original boot steps
 from boot import common_boot, configure_tf_cpu_only
 from helpers.state_ops import ensure_global_state
+
+# from hydralit import HydraApp
+# import hydralit_components as hc
+
+# ------------------ App setup ------------------ #
+
 
 ensure_global_state()
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 configure_tf_cpu_only()
 # common_boot()
 
+
+st.set_page_config(page_title="Mycoscope", page_icon="🧬", layout="wide")
+
 # hide Streamlit's sidebar nav (since Hydralit provides top nav)
-st.markdown(
-    """
-    <style>
-      [data-testid="stSidebarNav"] { display: none; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+# st.markdown(
+#     """
+#     <style>
+#       [data-testid="stSidebarNav"] { display: none; }
+#     </style>
+#     """,
+#     unsafe_allow_html=True,
+# )
 
 # remove white space above the navbar and around the page
 st.markdown(
@@ -55,40 +60,36 @@ def run_view(script_path: str):
 
 
 # ------------------ Hydralit app ------------------ #
-app = HydraApp(
-    title="Mycoscope",
-    favicon="🧬",
-    use_loader=False,
-    hide_streamlit_markers=True,  # cleaner header
-)
+# app = HydraApp(
+#     title="Mycoscope",
+#     favicon="🧬",
+#     use_loader=False,
+#     hide_streamlit_markers=True,  # cleaner header
+# )
 
 
 # Home page (default)
-@app.addapp(title="", icon="🏠")
-def page_home():
-    run_view("views/1_home_page.py")
+app = st.navigation (
+[
+    st.Page("views/1_home_page.py", title="", icon="🏠"),
 
 
-@app.addapp(title="Upload Models and Data", icon="📥")
-def page_upload():
-    run_view("views/2_Upload_data.py")
+
+    st.Page ("views/2_Upload_data.py",title="Upload Models and Data", icon="📥"),
 
 
-@app.addapp(title="Segment and Classify Cells", icon="🎭")
-def page_segment_classify():
-    run_view("views/3_Create_and_Edit_Masks.py")
+
+    st.Page("views/3_Create_and_Edit_Masks.py",title="Segment and Classify Cells", icon="🎭"),
 
 
-@app.addapp(title="Train Segmentation and Classification Models", icon="🧠")
-def page_train_models():
-    run_view("views/4_Fine_Tune_Models.py")
+
+    st.Page("views/4_Fine_Tune_Models.py",title="Train Segmentation and Classification Models", icon="🧠"),
 
 
-@app.addapp(title="Analyze Cell Groups", icon="📊")
-def page_metrics():
-    run_view("views/5_Cell_Metrics.py")
 
+    st.Page("views/5_Cell_Metrics.py", title="Analyze Cell Groups", icon="📊"),
 
+]
 # ------------------ Run ------------------ #
-
+)
 app.run()
