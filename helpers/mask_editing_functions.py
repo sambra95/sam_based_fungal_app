@@ -294,15 +294,17 @@ def render_cellpose_hyperparameters_fragment():
         value=st.session_state.get("cp_ch1"),
         step=1,
         format="%d",
-        key="cp_ch1",
+        key="w_cp_ch1",
     )
+    st.session_state["cp_ch1"] = st.session_state.get("w_cp_ch1")
     st.number_input(
         "Channel 2",
         value=st.session_state.get("cp_ch2"),
         step=1,
         format="%d",
-        key="cp_ch2",
+        key="w_cp_ch2",
     )
+    st.session_state["cp_ch2"] = st.session_state["w_cp_ch2"]
 
     # Diameter: auto (None) or manual
     diam_mode = st.selectbox(
@@ -313,51 +315,57 @@ def render_cellpose_hyperparameters_fragment():
             if st.session_state.get("cp_diam_mode", "Auto (None)") == "Auto (None)"
             else 1
         ),
-        key="cp_diam_mode",
+        key="w_cp_diam_mode",
         help="Leave as Auto for Cellpose to estimate diameter, or set a manual value.",
     )
-    diam_val = None
+    st.session_state["cp_diam_mode"] = diam_mode
+    # diam_val = None
     if diam_mode == "Manual":
         diam_val = st.number_input(
             "Manual diameter (pixels)",
             min_value=0.0,
             value=float(st.session_state.get("cp_diameter", 0.0)),
             step=1.0,
-            key="cp_diameter",
+            key="w_cp_diameter",
         )
+        st.session_state["cp_diameter"] = diam_val
 
     # Thresholds & size
     cellprob = st.number_input(
         "Cellprob threshold",
         value=float(st.session_state.get("cp_cellprob_threshold")),
         step=0.1,
-        key="cp_cellprob_threshold",
+        key="w_cp_cellprob_threshold",
         help="Higher -> fewer cells.",
     )
+    st.session_state["cp_cellprob_threshold"] = cellprob
     flowthr = st.number_input(
         "Flow threshold",
         value=float(st.session_state.get("cp_flow_threshold")),
         step=0.1,
-        key="cp_flow_threshold",
+        key="w_cp_flow_threshold",
         help="Lower -> more permissive flows.",
     )
+    st.session_state["cp_flow_threshold"] = flowthr
     min_size = st.number_input(
         "Minimum size (pixels)",
         value=int(st.session_state.get("cp_min_size")),
         min_value=0,
         step=10,
-        key="cp_min_size",
+        key="w_cp_min_size",
         help="Remove masks smaller than this area.",
     )
+    st.session_state["cp_min_size"] = min_size
 
     niter = st.number_input(
         "Niter",
         value=int(st.session_state["cp_niter"]),
         min_value=0,
         step=10,
-        key="cp_niter",
+        key="w_cp_niter",
         help="Higher values favour longer, stringier, cells.",
     )
+    st.session_state["cp_niter"] = niter
 
     # sync diameter to None when Auto selected
     if st.session_state.get("cp_diam_mode", "Auto (None)") == "Auto (None)":
