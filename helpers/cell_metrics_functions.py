@@ -9,6 +9,7 @@ from zipfile import ZipFile
 from pathlib import Path
 from zipfile import ZIP_DEFLATED
 from helpers.classifying_functions import color_hex_for
+from scipy.ndimage import binary_erosion
 
 
 def _hex_for_plot_label(label: str) -> str:
@@ -188,18 +189,93 @@ def add_data_points_to_plot(plot, order, sub, value_col, xpos):
     return traces
 
 
-def _longest_edge_to_edge(prop):
-    # Prefer skimage's built-in (fast, convex-hull based)
-    if hasattr(prop, "feret_diameter_max"):
-        return float(prop.feret_diameter_max)
-    # Fallback: max pairwise distance along the region's contour (simple & clear)
-    cnt = max(
-        find_contours(prop.image, 0.5), key=len
-    )  # (y,x) coords in the prop.image frame
-    d2 = ((cnt[:, None, :] - cnt[None, :, :]) ** 2).sum(
-        -1
-    )  # pairwise squared distances
-    return float(d2.max() ** 0.5)
+def _bresenham(r0, c0, r1, c1):
+    dr, dc = abs(r1 - r0), abs(c1 - c0)
+    sr = 1 if r0 < r1 else -1
+    sc = 1 if c0 < c1 else -1
+    r, c, pts = r0, c0, []
+    if dc > dr:
+        e = dc // 2
+        while c != c1:
+            pts.append((r, c))
+            e -= dr
+            if e < 0:
+                r += sr
+                e += dc
+            c += sc
+    else:
+        e = dr // 2
+        while r != r1:
+            pts.append((r, c))
+            e -= dc
+            if e < 0:
+                c += sc
+                e += dr
+            r += sr
+    pts.append((r1, c1))
+    return np.asarray(pts, np.int64)
+
+
+def _boundary_pixels(mask):
+    if not mask.any():
+        return np.empty((0, 2), np.int64)
+    er = binary_erosion(mask, structure=np.ones((3, 3), bool), border_value=0)
+    return np.argwhere(mask & ~er)
+
+
+def _longest_edge_to_edge(prop, max_points=1000, topk=8, rng_seed=0):
+    """
+    Returns the length (float) of the longest internal chord within the region `prop`,
+    computed by testing Bresenham lines between boundary pixels and requiring the
+    entire line to lie inside the region. Pixel spacing is assumed to be (1,1).
+    """
+    reg = prop.image.astype(bool)
+    b = _boundary_pixels(reg)
+
+    # Degenerate cases
+    if len(b) < 2:
+        return 0.0
+
+    # Subsample boundary if too many points
+    if len(b) > max_points:
+        b = b[np.random.default_rng(rng_seed).choice(len(b), max_points, replace=False)]
+
+    # Pairwise squared distances (in pixels)
+    d = b[:, None, :] - b[None, :, :]
+    d2 = (d**2).sum(-1).astype(np.float64)
+    np.fill_diagonal(d2, -1.0)  # exclude self
+
+    H, W = reg.shape
+    best2 = -1.0
+
+    for i in range(len(b)):
+        # Consider only the farthest `topk` partners for each i
+        if topk >= len(b) - 1:
+            cand = np.argsort(d2[i])[::-1]
+        else:
+            kth = np.argpartition(d2[i], -topk)[-topk:]
+            cand = kth[np.argsort(d2[i][kth])[::-1]]
+
+        rA, cA = map(int, b[i])
+        for j in cand:
+            rB, cB = map(int, b[j])
+            d2_pix = (rB - rA) ** 2 + (cB - cA) ** 2
+            # Early exit for this i if candidates are only shorter than current best
+            if d2_pix <= best2:
+                break
+
+            pts = _bresenham(rA, cA, rB, cB)
+            rr, cc = pts[:, 0], pts[:, 1]
+
+            # Bounds & inside checks
+            if rr.min() < 0 or cc.min() < 0 or rr.max() >= H or cc.max() >= W:
+                continue
+            if not reg[rr, cc].all():
+                continue
+
+            best2 = d2_pix  # valid internal chord, keep the best squared length
+
+    return float(best2**0.5) if best2 >= 0.0 else 0.0
 
 
 def build_analysis_df():
