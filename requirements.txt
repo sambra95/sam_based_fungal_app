@@ -1,19 +1,33 @@
+# Core scientific stack
 numpy
 pandas
-cellpose==3.1.1.2 
-opencv-python
-opencv-contrib-python
+scipy==1.16.3
 matplotlib
-Pillow
-scikit-learn
-scikit-image~=0.25
-streamlit==1.40.0 # streamlit-drawable-canvas requires <=1.40.0
-tensorflow
-keras==3.10 # 3.11 does not work, which might be a bit restrictive
-torch>=2.5.1
-torchvision>=0.20.1
 seaborn
+Pillow
+
+# Machine learning
+scikit-learn==1.7.2
+scikit-image~=0.25
+cellpose==3.1.1.2
+tensorflow==2.16.2
+keras==3.10  # 3.11 not compatible
+torch==2.5.1
+torchvision>=0.20.1
+typing_extensions==4.15.0
+
+# Computer vision
+opencv-python
+opencv-contrib-python==4.10.0.84
+opencv_python_headless==4.11.0.86
+tifffile==2024.9.20
 sam2
-streamlit-drawable-canvas
-streamlit-image-coordinates
-tifffile
+
+# Visualization and web app
+plotly==6.3.1
+streamlit==1.40.0  # streamlit-drawable-canvas requires <=1.40.0
+hydralit==1.0.14
+hydralit_components==1.0.10
+streamlit-drawable-canvas==0.9.3
+streamlit_drawable_canvas_fix==0.9.7
+streamlit-image-coordinates==0.4.0
