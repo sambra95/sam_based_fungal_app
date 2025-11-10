@@ -4,7 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from helpers.state_ops import ordered_keys
-from skimage.measure import regionprops
+from skimage.measure import regionprops, find_contours
 from zipfile import ZipFile
 from pathlib import Path
 from zipfile import ZIP_DEFLATED
@@ -188,6 +188,20 @@ def add_data_points_to_plot(plot, order, sub, value_col, xpos):
     return traces
 
 
+def _longest_edge_to_edge(prop):
+    # Prefer skimage's built-in (fast, convex-hull based)
+    if hasattr(prop, "feret_diameter_max"):
+        return float(prop.feret_diameter_max)
+    # Fallback: max pairwise distance along the region's contour (simple & clear)
+    cnt = max(
+        find_contours(prop.image, 0.5), key=len
+    )  # (y,x) coords in the prop.image frame
+    d2 = ((cnt[:, None, :] - cnt[None, :, :]) ** 2).sum(
+        -1
+    )  # pairwise squared distances
+    return float(d2.max() ** 0.5)
+
+
 def build_analysis_df():
     rows = []
     for k in ordered_keys():
@@ -206,10 +220,10 @@ def build_analysis_df():
                     "mask #": iid,
                     "mask label": ("Unlabelled" if cls in (None, "No label") else cls),
                     "mask area": float(prop.area),
-                    "mask perimeter": float(
-                        prop.perimeter
-                    ),  # or perimeter_crofton if you prefer
-                    # add any other metrics here, using `prop`
+                    "mask perimeter": float(prop.perimeter),  # or perimeter_crofton
+                    "max edge-to-edge": _longest_edge_to_edge(
+                        prop
+                    ),  # longest distance within the cell
                 }
             )
     return pd.DataFrame(rows)
