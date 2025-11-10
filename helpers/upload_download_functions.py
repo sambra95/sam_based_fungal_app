@@ -13,6 +13,8 @@ import pandas as pd
 from PIL import UnidentifiedImageError
 from helpers.classifying_functions import classes_map_from_labels, create_colour_palette
 from helpers.mask_editing_functions import create_image_mask_overlay
+from helpers.densenet_functions import resize_with_aspect_ratio
+
 
 from helpers.state_ops import (
     ordered_keys,
@@ -35,7 +37,7 @@ def process_uploads(files, mask_suffix):
     skipped = []
 
     mask_suffix_len = len(mask_suffix)
-    imgs = [f for f in files if not stem(f.name).endswith(mask_suffix)]
+    imgs = [(f) for f in files if not stem(f.name).endswith(mask_suffix)]
     for f in imgs:
         try:
             create_new_record_with_image(f)
@@ -114,6 +116,9 @@ def create_new_record_with_image(uploaded_file):
 
     try:
         img_np = np.array(Image.open(uploaded_file).convert("RGB"), dtype=np.uint8)
+        img_np = resize_with_aspect_ratio(
+            img_np, patch_size=512
+        )  # images are always resized to 512x512
     except (UnidentifiedImageError, Exception):
         raise
 
