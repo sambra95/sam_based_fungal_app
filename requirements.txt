@@ -30,3 +30,4 @@ hydralit_components==1.0.10
 streamlit==1.40.0
 streamlit-drawable-canvas==0.9.3
 streamlit-image-coordinates==0.1.9   # last pre-2025 release, works with 1.40
+streamlit_image_annotation

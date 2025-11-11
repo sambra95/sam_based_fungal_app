@@ -14,6 +14,10 @@ from helpers import config as cfg  # CKPT_PATH, CFG_PATH
 from helpers.state_ops import ordered_keys, get_current_rec
 from helpers.classifying_functions import classes_map_from_labels, create_colour_palette
 from helpers.cellpose_functions import segment_with_cellpose, normalize_image
+from streamlit_image_annotation import detection
+from PIL import Image
+import os
+import hashlib
 
 # -----------------------------------------------------#
 # --------------- MASK HELPERS SIDEBAR --------------- #
@@ -636,43 +640,51 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
                     st.rerun()
 
         # click and hold to draw boxes on the image
+
         elif mode == "Draw box":
             MIN_BOX_SIZE = 10
+
+            # 1) Render image for the UI
             bg = Image.fromarray(display_for_ui).convert("RGB")
-            initial_json = render_sam2_boxes(rec["boxes"], scale=scale)
-            num_initial = len(initial_json.get("objects", []))
-            canvas_result = st_canvas(
-                fill_color="rgba(0, 0, 255, 0.25)",
-                stroke_width=2,
-                stroke_color="white",
-                background_color="white",
-                background_image=bg,
-                update_streamlit=True,
-                width=disp_w,
+
+            # --- derive a short, stable hash for THIS image to bust widget/browser state ---
+            img_hash = hashlib.md5(bg.tobytes()).hexdigest()[:8]
+
+            # detection() needs a file path
+            tmp_dir = ".stia_tmp"
+            os.makedirs(tmp_dir, exist_ok=True)
+
+            # --- unique path per image so the browser doesn't reuse the old bitmap ---
+            img_path = os.path.join(tmp_dir, f"{key_ns}_{img_hash}.png")
+            bg.save(img_path)
+
+            # 2) Let the user draw/edit boxes (temporary only; resets on navigation)
+            result = detection(
+                image_path=img_path,
+                label_list=["box"],  # keep label so the component runs normally
+                bboxes=[],
+                labels=[],
                 height=disp_h,
-                drawing_mode="rect",
-                point_display_radius=3,
-                initial_drawing=initial_json,
-                key=f"{key_ns}_canvas_pred_{st.session_state['pred_canvas_nonce']}",
+                width=disp_w,
+                line_width=2,
+                key=f"{key_ns}_canvas_{img_hash}",
             )
 
-            if canvas_result.json_data:
-                objs = canvas_result.json_data.get("objects", [])
-                added_any = False
-                for obj in objs[num_initial:]:
-                    if obj.get("type") != "rect":
+            # 3) Convert current boxes back to ORIGINAL image coordinates and expose via rec["boxes"]
+            tmp_boxes = []
+            if result:
+                for item in result:
+                    bbox = item.get("bbox")
+                    if not bbox or len(bbox) != 4:
                         continue
 
-                    left = float(obj.get("left", 0))
-                    top = float(obj.get("top", 0))
-                    width = float(obj.get("width", 0)) * float(obj.get("scaleX", 1.0))
-                    height = float(obj.get("height", 0)) * float(obj.get("scaleY", 1.0))
+                    left, top, width, height = map(float, bbox)
+
                     x0 = int(round(left / scale))
                     y0 = int(round(top / scale))
                     x1 = int(round((left + width) / scale))
                     y1 = int(round((top + height) / scale))
 
-                    # Clip to image bounds
                     x0 = max(0, min(rec["W"] - 1, x0))
                     x1 = max(0, min(rec["W"], x1))
                     y0 = max(0, min(rec["H"] - 1, y0))
@@ -682,17 +694,12 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
                     if y1 < y0:
                         y0, y1 = y1, y0
 
-                    # --- Ignore small boxes ---
-                    box_w = x1 - x0
-                    box_h = y1 - y0
-                    if box_w < MIN_BOX_SIZE or box_h < MIN_BOX_SIZE:
-                        continue  # skip small rectangles
+                    if (x1 - x0) < MIN_BOX_SIZE or (y1 - y0) < MIN_BOX_SIZE:
+                        continue
 
-                    rec["boxes"].append((x0, y0, x1, y1))
-                    added_any = True
+                    tmp_boxes.append((x0, y0, x1, y1))
 
-                if added_any:
-                    st.rerun()
+            rec["boxes"] = tmp_boxes
 
         # click a mask in the image to remove the mask
         elif mode == "Remove mask":
