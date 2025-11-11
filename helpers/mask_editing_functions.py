@@ -407,14 +407,17 @@ def render_cellpose_hyperparameters_fragment():
 def render_box_tools_fragment(key_ns="side"):
     rec = get_current_rec()
     row = st.container()
+
+    st.info("Draw boxes, click 'Complete' then click 'Segment'")
+
     c1, c2 = row.columns([1, 1])
 
-    if c1.button("Draw box", use_container_width=True, key=f"{key_ns}_draw_boxes"):
+    if c1.button("Draw box mode", use_container_width=True, key=f"{key_ns}_draw_boxes"):
         st.session_state["interaction_mode"] = "Draw box"
         st.rerun()
 
     if c2.button(
-        "Segment cells in boxes",
+        "Segment",
         use_container_width=True,
         key=f"{key_ns}_predict",
         help="Remember to click complete first!",
