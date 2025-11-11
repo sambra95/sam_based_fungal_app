@@ -14,10 +14,11 @@ from helpers import config as cfg  # CKPT_PATH, CFG_PATH
 from helpers.state_ops import ordered_keys, get_current_rec
 from helpers.classifying_functions import classes_map_from_labels, create_colour_palette
 from helpers.cellpose_functions import segment_with_cellpose, normalize_image
-from streamlit_image_annotation import detection
-from PIL import Image
 import os
 import hashlib
+from PIL import Image
+from streamlit_image_annotation import detection
+import tempfile
 
 # -----------------------------------------------------#
 # --------------- MASK HELPERS SIDEBAR --------------- #
@@ -385,27 +386,7 @@ def render_box_tools_fragment(key_ns="side"):
         st.session_state["interaction_mode"] = "Draw box"
         st.rerun()
 
-    if c2.button("Remove box", use_container_width=True, key=f"{key_ns}_remove_boxes"):
-        st.session_state["interaction_mode"] = "Remove box"
-        st.rerun()
-
-    row = st.container()
-    c1, c2 = row.columns([1, 1])
-
-    if c1.button(
-        "Remove all boxes", use_container_width=True, key=f"{key_ns}_clear_boxes"
-    ):
-        rec["boxes"] = []
-        st.session_state["pred_canvas_nonce"] += 1
-        st.rerun()
-
-    if c2.button("Remove last box", use_container_width=True, key=f"{key_ns}_undo_box"):
-        if rec["boxes"]:
-            rec["boxes"].pop()
-            st.session_state["pred_canvas_nonce"] += 1
-            st.rerun()
-
-    if st.button(
+    if c2.button(
         "Segment cells in boxes", use_container_width=True, key=f"{key_ns}_predict"
     ):
         new_masks = segment_with_sam2(rec)
@@ -640,9 +621,7 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
                     st.rerun()
 
         # click and hold to draw boxes on the image
-
         elif mode == "Draw box":
-            MIN_BOX_SIZE = 10
 
             # 1) Render image for the UI
             bg = Image.fromarray(display_for_ui).convert("RGB")
@@ -655,18 +634,21 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
             os.makedirs(tmp_dir, exist_ok=True)
 
             # --- unique path per image so the browser doesn't reuse the old bitmap ---
-            img_path = os.path.join(tmp_dir, f"{key_ns}_{img_hash}.png")
-            bg.save(img_path)
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                bg.save(tmp, format="PNG")
+                img_path = tmp.name
 
             # 2) Let the user draw/edit boxes (temporary only; resets on navigation)
+            # NOTE: Always pass *both* bboxes and labels, even if empty.
             result = detection(
                 image_path=img_path,
-                label_list=["box"],  # keep label so the component runs normally
+                label_list=["box"],  # restored "box" label
                 bboxes=[],
                 labels=[],
                 height=disp_h,
                 width=disp_w,
                 line_width=2,
+                # key tied to image hash so the component remounts for each image
                 key=f"{key_ns}_canvas_{img_hash}",
             )
 
@@ -693,9 +675,6 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
                         x0, x1 = x1, x0
                     if y1 < y0:
                         y0, y1 = y1, y0
-
-                    if (x1 - x0) < MIN_BOX_SIZE or (y1 - y0) < MIN_BOX_SIZE:
-                        continue
 
                     tmp_boxes.append((x0, y0, x1, y1))
 
@@ -742,29 +721,6 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
                             rec["masks"] = inst
                             rec["last_click_xy"] = (x, y)
                             st.rerun()
-
-        # click on a box in the image to remove the box
-        elif mode == "Remove box":
-            overlay = draw_boxes_overlay(
-                base_img, rec["boxes"], alpha=0.25, outline_px=2
-            )
-            overlay_for_ui = np.array(
-                Image.fromarray(overlay).resize((disp_w, disp_h), Image.BILINEAR)
-            )
-            click = streamlit_image_coordinates(
-                overlay_for_ui, key=f"{key_ns}_pred_click_remove", width=disp_w
-            )
-            if click:
-                x = int(round(int(click["x"]) / scale))
-                y = int(round(int(click["y"]) / scale))
-                hits = [
-                    i
-                    for i, (x0, y0, x1, y1) in enumerate(rec["boxes"])
-                    if (x0 <= x < x1) and (y0 <= y < y1)
-                ]
-                if hits:
-                    rec["boxes"].pop(hits[-1])
-                    st.rerun()
 
         # click on a mask in the image to assign it the current class
         elif mode == "Assign class":
