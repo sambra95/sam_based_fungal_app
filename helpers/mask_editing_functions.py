@@ -595,27 +595,62 @@ def create_image_mask_overlay(image, mask, classes_map, palette, alpha=0.5):
     return (np.clip(out, 0, 1) * 255).astype(np.uint8)
 
 
+# --- fast, content-agnostic hashing for big structures ---
+ARRAY_HASH = {np.ndarray: lambda a: (id(a), a.shape, str(a.dtype))}
+DICT_HASH = {dict: lambda d: (id(d), len(d))}  # cheap; relies on reassigning dicts
+
+
+@st.cache_data(hash_funcs={**ARRAY_HASH, **DICT_HASH})
+def _make_base_img(
+    image_arr, masks_arr, labels_dict, show_overlay, all_labels_tuple, alpha
+):
+    """Return either the raw image or an overlay; pure & cacheable."""
+    if (
+        show_overlay
+        and isinstance(masks_arr, np.ndarray)
+        and masks_arr.ndim == 2
+        and masks_arr.any()
+    ):
+        palette = create_colour_palette(
+            list(all_labels_tuple)
+        )  # derived from labels list
+        classes_map = classes_map_from_labels(masks_arr, labels_dict)
+        return create_image_mask_overlay(
+            image_arr, masks_arr, classes_map, palette, alpha
+        )
+    return image_arr
+
+
+@st.cache_data(hash_funcs=ARRAY_HASH)
+def _resize_uint8(image_arr_uint8, disp_w, disp_h):
+    """Resize to display size; returns uint8 np.ndarray."""
+    return np.array(
+        Image.fromarray(image_arr_uint8).resize((disp_w, disp_h), Image.BILINEAR)
+    )
+
+
 def create_image_display(rec, scale):
     disp_w, disp_h = int(rec["W"] * scale), int(rec["H"] * scale)
 
-    mask = rec.get("masks")
-    has_instances = isinstance(mask, np.ndarray) and mask.ndim == 2 and mask.any()
+    show_overlay = bool(st.session_state.get("show_overlay", False))
+    all_labels = tuple(
+        st.session_state.setdefault("all_classes", ["No label"])
+    )  # tuple for stable hashing
+    alpha = 0.35  # constant used in your original code
 
-    if st.session_state.get("show_overlay", False) and has_instances:
-        labels = st.session_state.setdefault("all_classes", ["No label"])
-        palette = create_colour_palette(labels)
-        classes_map = classes_map_from_labels(rec["masks"], rec["labels"])
-        base_img = create_image_mask_overlay(
-            rec["image"], rec["masks"], classes_map, palette, alpha=0.35
-        )
-    else:
-        base_img = rec["image"]  # need unaltered image to draw boxes on
-
-    display_for_ui = np.array(
-        Image.fromarray(base_img.astype(np.uint8)).resize(
-            (disp_w, disp_h), Image.BILINEAR
-        )
+    # 1) get base image (raw or overlaid) – cached
+    base_img = _make_base_img(
+        rec["image"],  # np.ndarray (uint8 HxWx3)
+        rec.get("masks"),  # np.ndarray or None
+        rec.get("labels", {}),  # dict {iid: class}
+        show_overlay,
+        all_labels,
+        alpha,
     )
+
+    # 2) resize for UI – cached
+    display_for_ui = _resize_uint8(base_img.astype(np.uint8), disp_w, disp_h)
+
     return base_img, display_for_ui, disp_w, disp_h
 
 
