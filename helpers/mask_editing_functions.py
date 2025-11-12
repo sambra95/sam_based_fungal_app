@@ -10,7 +10,6 @@ from scipy import ndimage as ndi
 from streamlit_drawable_canvas import st_canvas
 from streamlit_image_coordinates import streamlit_image_coordinates
 
-from helpers import config as cfg  # CKPT_PATH, CFG_PATH
 from helpers.state_ops import ordered_keys, get_current_rec
 from helpers.classifying_functions import classes_map_from_labels, create_colour_palette
 from helpers.cellpose_functions import segment_with_cellpose, normalize_image
@@ -195,17 +194,17 @@ def _load_sam2():
     )
 
     # use package config string (resolved by the installed sam2 package)
-    cfg.CFG_PATH = "configs/sam2.1/sam2.1_hiera_l.yaml"
+    CFG_PATH = "configs/sam2.1/sam2.1_hiera_l.yaml"
     # download checkpoint to local HF cache and use its path
-    cfg.CKPT_PATH = hf_hub_download(
+    CKPT_PATH = hf_hub_download(
         repo_id="facebook/sam2.1-hiera-large",
         filename="sam2.1_hiera_large.pt",
     )
     # --- minimal additions end ---
 
     sam = build_sam2(
-        cfg.CFG_PATH,
-        cfg.CKPT_PATH,
+        CFG_PATH,
+        CKPT_PATH,
         device=device,
         apply_postprocessing=False,  # post-processing not supported with MPS :(
     )
@@ -308,7 +307,7 @@ def remove_clicked():
         int(round(st.session_state["remove_click"]["y"] / s)),
     )
 
-    # ignore if it's the same click we already handled
+    # ignore click from previous run
     if xy == st.session_state["last_remove_xy"]:
         return
 
@@ -349,7 +348,7 @@ def assign_clicked():
         int(round(st.session_state["class_click"]["y"] / s)),
     )
 
-    # ignore if it's the same click we already handled
+    # ignore click from previous run
     if xy == st.session_state["last_class_xy"]:
         return
 
