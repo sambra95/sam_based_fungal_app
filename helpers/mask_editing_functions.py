@@ -20,6 +20,111 @@ from streamlit_image_annotation import detection
 import tempfile
 from huggingface_hub import hf_hub_download
 
+
+import streamlit as st
+import plotly.graph_objects as go
+from PIL import Image
+import hashlib
+
+# ---------- Box drawing helpers ----------
+
+
+def _ensure_box_state(box_state_key: str):
+    if box_state_key not in st.session_state:
+        st.session_state[box_state_key] = []  # list of dicts with x0,x1,y0,y1
+
+
+def _update_boxes(box_state_key: str, chart_key: str):
+    """Callback run when a selection is made on the Plotly chart."""
+    event = st.session_state.get(chart_key)
+    if event is None or event.selection is None:
+        return
+
+    if event.selection.box:
+        for b in event.selection.box:
+            x0, x1 = b["x"]
+            y0, y1 = b["y"]
+            clean_box = {
+                "x0": float(x0),
+                "x1": float(x1),
+                "y0": float(y0),
+                "y1": float(y1),
+            }
+            if clean_box not in st.session_state[box_state_key]:
+                st.session_state[box_state_key].append(clean_box)
+
+
+def _make_figure_with_boxes(bg_img, disp_w, disp_h, box_state_key: str):
+    fig = go.Figure()
+
+    # This version you had was working (image visible)
+    fig.add_layout_image(
+        dict(
+            source=bg_img,
+            xref="x",
+            yref="y",
+            x=0,
+            y=disp_h,  # top of the image
+            sizex=disp_w,
+            sizey=disp_h,
+            sizing="stretch",
+            layer="below",
+        )
+    )
+
+    fig.update_xaxes(
+        visible=False,
+        range=[0, disp_w],
+        constrain="domain",
+    )
+    fig.update_yaxes(
+        visible=False,
+        range=[0, disp_h],
+        scaleanchor="x",
+        scaleratio=1,
+    )
+
+    fig.update_layout(
+        dragmode="select",
+        margin=dict(l=0, r=0, t=0, b=0),
+    )
+
+    # draw stored boxes
+    for box in st.session_state[box_state_key]:
+        x0 = box["x0"]
+        x1 = box["x1"]
+        y0 = box["y0"]
+        y1 = box["y1"]
+
+        fig.add_shape(
+            type="rect",
+            x0=x0,
+            x1=x1,
+            y0=y0,
+            y1=y1,
+            line=dict(color="red", width=2),
+            fillcolor="rgba(255,0,0,0.15)",
+            layer="above",
+        )
+
+    return fig
+
+
+@st.fragment
+def box_draw_fragment(bg_img, disp_w, disp_h, box_state_key: str, chart_key: str):
+    """Fragment that only reruns when interacting with the Plotly chart."""
+    fig = _make_figure_with_boxes(bg_img, disp_w, disp_h, box_state_key)
+
+    # IMPORTANT: chart_key drives both session_state entry and callback
+    _ = st.plotly_chart(
+        fig,
+        key=chart_key,
+        selection_mode="box",
+        on_select=lambda: _update_boxes(box_state_key, chart_key),
+        use_container_width=True,
+    )
+
+
 # -----------------------------------------------------#
 # --------------- MASK HELPERS SIDEBAR --------------- #
 # -----------------------------------------------------#
@@ -294,6 +399,10 @@ def polygon_to_mask(obj, h, w):
     return np.array(mask_img, dtype=np.uint8)
 
 
+def _bump(key):
+    st.session_state[key] = st.session_state.get(key, 0) + 1
+
+
 def remove_clicked():
     if not st.session_state["remove_click"]:
         return
@@ -333,42 +442,39 @@ def remove_clicked():
         if k != iid
     }
     st.session_state["remove_click"] = False  # prevent reprocessing on rerun
+    _bump("masks_version")  # <— masks changed
+    _bump("labels_version")  # ids shifted → labels remapped
     st.rerun()
 
 
 def assign_clicked():
-    if not st.session_state["class_click"]:
+    c = st.session_state.get("class_click")
+    if not c:
         return
 
     rec = get_current_rec()
-    disp_w = st.session_state["disp_w"]
-    s = float(disp_w / rec["W"])
-    xy = (
-        int(round(st.session_state["class_click"]["x"] / s)),
-        int(round(st.session_state["class_click"]["y"] / s)),
-    )
-
-    # ignore click from previous run
-    if xy == st.session_state["last_class_xy"]:
+    s = float(st.session_state["disp_w"] / rec["W"])
+    x, y = int(round(c["x"] / s)), int(round(c["y"] / s))
+    if not (0 <= x < rec["W"] and 0 <= y < rec["H"]):
         return
 
-    st.session_state["last_class_xy"] = xy
-
-    x, y = xy
     m = rec.get("masks")
-
     iid = int(m[y, x])
-    if iid == 0:
+    if iid <= 0:
         return
 
     cur = st.session_state.get("side_current_class")
-    labels = rec.setdefault("labels", {})
-    if cur == "No label" or cur is None:
-        labels.pop(iid, None)
-    else:
-        labels[iid] = cur
 
-    st.session_state["class_click"] = False  # prevent reprocessing on rerun
+    old = rec.get("labels", {})
+    new = dict(old)  # <-- NEW OBJECT (cache invalidates)
+    if cur == "No label" or cur is None:
+        new.pop(iid, None)
+    else:
+        new[iid] = cur
+    rec["labels"] = new  # <-- reassign
+    _bump("masks_version")  # <— masks changed
+    _bump("labels_version")  # ids shifted → labels remapped
+
     st.rerun()
 
 
@@ -476,6 +582,10 @@ def render_box_tools_fragment(key_ns="side"):
     row = st.container()
 
     st.info("Draw boxes, click 'Complete' then click 'Segment'")
+    if st.button("Clear boxes for this image"):
+        # Reset state for this particular image
+        st.session_state[box_state_key] = []
+        rec["boxes"] = []
 
     c1, c2 = row.columns([1, 1])
 
@@ -594,25 +704,30 @@ def create_image_mask_overlay(image, mask, classes_map, palette, alpha=0.5):
     return (np.clip(out, 0, 1) * 255).astype(np.uint8)
 
 
-# --- fast, content-agnostic hashing for big structures ---
 ARRAY_HASH = {np.ndarray: lambda a: (id(a), a.shape, str(a.dtype))}
-DICT_HASH = {dict: lambda d: (id(d), len(d))}  # cheap; relies on reassigning dicts
+DICT_HASH = {dict: lambda d: id(d)}  # rely on dict reassignment + version
 
 
 @st.cache_data(hash_funcs={**ARRAY_HASH, **DICT_HASH})
 def _make_base_img(
-    image_arr, masks_arr, labels_dict, show_overlay, all_labels_tuple, alpha
+    image_arr,
+    masks_arr,
+    labels_dict,
+    show_overlay,
+    all_labels_tuple,
+    alpha,
+    masks_version: int,
+    labels_version: int,
+    image_version: int,
 ):
-    """Return either the raw image or an overlay; pure & cacheable."""
+    # versions are unused inside, just part of the cache key
     if (
         show_overlay
         and isinstance(masks_arr, np.ndarray)
         and masks_arr.ndim == 2
         and masks_arr.any()
     ):
-        palette = create_colour_palette(
-            list(all_labels_tuple)
-        )  # derived from labels list
+        palette = create_colour_palette(list(all_labels_tuple))
         classes_map = classes_map_from_labels(masks_arr, labels_dict)
         return create_image_mask_overlay(
             image_arr, masks_arr, classes_map, palette, alpha
@@ -622,7 +737,6 @@ def _make_base_img(
 
 @st.cache_data(hash_funcs=ARRAY_HASH)
 def _resize_uint8(image_arr_uint8, disp_w, disp_h):
-    """Resize to display size; returns uint8 np.ndarray."""
     return np.array(
         Image.fromarray(image_arr_uint8).resize((disp_w, disp_h), Image.BILINEAR)
     )
@@ -630,26 +744,27 @@ def _resize_uint8(image_arr_uint8, disp_w, disp_h):
 
 def create_image_display(rec, scale):
     disp_w, disp_h = int(rec["W"] * scale), int(rec["H"] * scale)
-
     show_overlay = bool(st.session_state.get("show_overlay", False))
-    all_labels = tuple(
-        st.session_state.setdefault("all_classes", ["No label"])
-    )  # tuple for stable hashing
-    alpha = 0.35  # constant used in your original code
+    all_labels = tuple(st.session_state.setdefault("all_classes", ["No label"]))
+    alpha = 0.35
 
-    # 1) get base image (raw or overlaid) – cached
+    mv = st.session_state.get("masks_version", 0)
+    lv = st.session_state.get("labels_version", 0)
+    iv = st.session_state.get("image_version", 0)
+
     base_img = _make_base_img(
-        rec["image"],  # np.ndarray (uint8 HxWx3)
-        rec.get("masks"),  # np.ndarray or None
-        rec.get("labels", {}),  # dict {iid: class}
+        rec["image"],
+        rec.get("masks"),
+        rec.get("labels", {}),
         show_overlay,
         all_labels,
         alpha,
+        mv,
+        lv,
+        iv,  # <— cache-busting tokens
     )
 
-    # 2) resize for UI – cached
     display_for_ui = _resize_uint8(base_img.astype(np.uint8), disp_w, disp_h)
-
     return base_img, display_for_ui, disp_w, disp_h
 
 
@@ -758,63 +873,86 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
 
         # click and hold to draw boxes on the image
         elif mode == "Draw box":
+            # 1) Render image for the UI (same as before)
+            bg = Image.fromarray(display_for_ui).convert(
+                "RGBA"
+            )  # keep alpha for Plotly
+            disp_h, disp_w = display_for_ui.shape[0], display_for_ui.shape[1]
 
-            # 1) Render image for the UI
-            bg = Image.fromarray(display_for_ui).convert("RGB")
-
-            # --- derive a short, stable hash for THIS image to bust widget/browser state ---
+            # short, stable hash for THIS image
             img_hash = hashlib.md5(bg.tobytes()).hexdigest()[:8]
 
-            # detection() needs a file path
-            tmp_dir = ".stia_tmp"
-            os.makedirs(tmp_dir, exist_ok=True)
+            # Keys so multiple images don't share box state
+            box_state_key = f"{key_ns}_boxes_{img_hash}"
+            chart_key = f"{key_ns}_plotly_{img_hash}"
 
-            # --- unique path per image so the browser doesn't reuse the old bitmap ---
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                bg.save(tmp, format="PNG")
-                img_path = tmp.name
+            # Ensure state container exists for this image
+            _ensure_box_state(box_state_key)
 
-            # 2) Let the user draw/edit boxes (temporary only; resets on navigation)
-            # NOTE: Always pass *both* bboxes and labels, even if empty.
-            result = detection(
-                image_path=img_path,
-                label_list=["box"],  # restored "box" label
-                bboxes=[],
-                labels=[],
-                height=disp_h,
-                width=disp_w,
-                line_width=2,
-                # key tied to image hash so the component remounts for each image
-                key=f"{key_ns}_canvas_{img_hash}",
+            # 2) Draw / update boxes in a fragment
+            box_draw_fragment(
+                bg_img=bg,
+                disp_w=disp_w,
+                disp_h=disp_h,
+                box_state_key=box_state_key,
+                chart_key=chart_key,
             )
 
-            # 3) Convert current boxes back to ORIGINAL image coordinates and expose via rec["boxes"]
+            # 3) Convert current boxes in DISPLAY coordinates -> ORIGINAL image coords
             tmp_boxes = []
-            if result:
-                for item in result:
-                    bbox = item.get("bbox")
-                    if not bbox or len(bbox) != 4:
-                        continue
+            boxes_on_display = st.session_state[box_state_key]
 
-                    left, top, width, height = map(float, bbox)
+            for box in boxes_on_display:
+                x0_plot = box["x0"]
+                x1_plot = box["x1"]
+                y0_plot = box["y0"]
+                y1_plot = box["y1"]
 
-                    x0 = int(round(left / scale))
-                    y0 = int(round(top / scale))
-                    x1 = int(round((left + width) / scale))
-                    y1 = int(round((top + height) / scale))
+                # ensure ordering in Plotly coords
+                if x1_plot < x0_plot:
+                    x0_plot, x1_plot = x1_plot, x0_plot
+                if y1_plot < y0_plot:
+                    y0_plot, y1_plot = y1_plot, y0_plot
 
-                    x0 = max(0, min(rec["W"] - 1, x0))
-                    x1 = max(0, min(rec["W"], x1))
-                    y0 = max(0, min(rec["H"] - 1, y0))
-                    y1 = max(0, min(rec["H"], y1))
-                    if x1 < x0:
-                        x0, x1 = x1, x0
-                    if y1 < y0:
-                        y0, y1 = y1, y0
+                # --- Flip Y: Plotly (0 bottom) -> display image (0 top) ---
+                # top edge in image coords:
+                y0_disp = disp_h - y1_plot
+                # bottom edge in image coords:
+                y1_disp = disp_h - y0_plot
 
-                    tmp_boxes.append((x0, y0, x1, y1))
+                # X is identical
+                x0_disp = x0_plot
+                x1_disp = x1_plot
 
+                # --- Scale back to ORIGINAL image coordinates using 'scale' ---
+                x0 = int(round(x0_disp / scale))
+                x1 = int(round(x1_disp / scale))
+                y0 = int(round(y0_disp / scale))
+                y1 = int(round(y1_disp / scale))
+
+                # clamp to original image bounds
+                x0 = max(0, min(rec["W"] - 1, x0))
+                x1 = max(0, min(rec["W"], x1))
+                y0 = max(0, min(rec["H"] - 1, y0))
+                y1 = max(0, min(rec["H"], y1))
+
+                # final ordering safety
+                if x1 < x0:
+                    x0, x1 = x1, x0
+                if y1 < y0:
+                    y0, y1 = y1, y0
+
+                tmp_boxes.append((x0, y0, x1, y1))
+
+            # exposed to the rest of the app exactly like before
             rec["boxes"] = tmp_boxes
+
+            st.subheader("Box tools")
+
+            if st.button("Clear boxes for this image", key="clear_boxes"):
+                # Reset state for this particular image
+                st.session_state[box_state_key] = []
+                rec["boxes"] = []
 
         # click a mask in the image to remove the mask
         elif mode == "Remove mask":

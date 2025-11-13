@@ -127,6 +127,7 @@ def create_new_record_with_image(uploaded_file):
     st.session_state.next_ord += 1
     imgs[k] = {
         "name": name,
+        "id": k,
         "image": img_np,
         "H": H,
         "W": W,
