@@ -621,45 +621,27 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
         st.warning("Upload an image in **Upload data** first.")
         return
 
-    # --- header: title + controls (Prev / Next / toggles) ---
     ok = ordered_keys()
     names = [st.session_state.images[k]["name"] for k in ok]
     reck = st.session_state.current_key
     rec_idx = ok.index(reck) if reck in ok else 0
 
-    c1, c2, c3 = st.columns([1, 4, 1])
-    with c1:
-        st.markdown(
-            "<br><br><br>", unsafe_allow_html=True
-        )  # filler to move buttons further down the screen
-        if st.button(
-            "◀",
-            key=f"{key_ns}_prev_main",
-            use_container_width=True,
-        ):
-            set_current_by_index(rec_idx - 1)
-            st.rerun(scope="fragment")
-        st.markdown("<br>", unsafe_allow_html=True)  # filler
+    slider_key = f"{key_ns}_jump"  # define once, reuse
 
+    c1, c2 = st.columns([1, 4])
+    with c1:
         st.toggle("Show masks", key="show_overlay", value=True)
         st.toggle("Normalize image", key="show_normalized", value=False)
+
     with c2:
         st.info(f"**Image {rec_idx+1}/{len(ok)}:** {names[rec_idx]}")
 
-        slider_key = f"{key_ns}_jump"
-        current_slider_val = rec_idx + 1  # 1-based for the user
-
-        # Keep slider in sync with current image when Prev/Next are used
-        if slider_key not in st.session_state:
-            st.session_state[slider_key] = current_slider_val
-        elif st.session_state[slider_key] != current_slider_val:
-            st.session_state[slider_key] = current_slider_val
-
+        # Just read the slider
         jump = st.slider(
             "Image index",
-            1,  # start at 1, not 0
-            len(ok),  # end at number of images
-            key=slider_key,  # value comes from session_state now
+            1,
+            len(ok),
+            key=slider_key,
             label_visibility="collapsed",
         )
 
@@ -668,7 +650,7 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
             set_current_by_index(jump - 1)
             st.rerun()
 
-        # --- show normalized image if toggled (display only)
+        # ... rest of your code unchanged ...
         rec_for_disp = rec
         if st.session_state.get("show_normalized"):
             im = normalize_image(rec["image"])
@@ -683,7 +665,6 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
 
         M = rec.get("masks")
 
-        # ---- Interaction modes ---- #
         if mode == "Draw mask":
             _handle_draw_mask_mode(
                 rec=rec,
@@ -692,7 +673,6 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
                 disp_h=disp_h,
                 key_ns=key_ns,
             )
-
         elif mode == "Draw box":
             _handle_draw_box_mode(
                 rec=rec,
@@ -701,27 +681,13 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
                 disp_h=disp_h,
                 key_ns=key_ns,
             )
-
         elif mode == "Remove mask":
             _handle_remove_mask_mode(
                 base_img=base_img,
                 disp_w=disp_w,
             )
-
         elif mode == "Assign class":
             _handle_assign_class_mode(
                 base_img=base_img,
                 disp_w=disp_w,
             )
-
-    with c3:
-        st.markdown(
-            "<br><br><br>", unsafe_allow_html=True
-        )  # filler to move buttons further down the screen
-        if st.button(
-            "*▶*",
-            key=f"{key_ns}_next_main",
-            use_container_width=True,
-        ):
-            set_current_by_index(rec_idx + 1)
-            st.rerun(scope="fragment")

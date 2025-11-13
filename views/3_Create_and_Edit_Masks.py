@@ -1,5 +1,4 @@
 import streamlit as st
-from boot import common_boot
 from panels import mask_editing_panel
 
 
@@ -7,7 +6,6 @@ from panels import mask_editing_panel
 
 col1, col2 = st.columns([2, 5])
 with col1:
-    st.markdown("<br><br><br><br><br><br>", unsafe_allow_html=True)
     with st.container(border=True):
 
         # common sidebar section for navigating between images
