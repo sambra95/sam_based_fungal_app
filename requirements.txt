@@ -27,5 +27,5 @@ huggingface_hub
 # Visualization and web app
 plotly==6.3.1
 streamlit==1.51.0
-streamlit-image-coordinates==0.1.9   # last pre-2025 release
+streamlit-image-coordinates==0.4.0
 
