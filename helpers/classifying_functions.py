@@ -207,23 +207,23 @@ def classes_map_from_labels(masks, labels):
     return classes_map
 
 
-def create_row(name: str, count: int, key: str, mode_ns: str = "side"):
+def create_row(name: str, key: str, mode_ns: str = "side"):
     # icon | name | count | select |
-    c1, c2, c3, c4 = st.columns([1, 5, 2, 3])
+    c1, c2, c3 = st.columns([1, 5, 5])
     c1.markdown(color_chip_md(color_hex_for(name)), unsafe_allow_html=True)
     c2.write(f"**{name}**")
-    c3.write(str(count))
 
     def _select():
         # pick this class and switch the main panel to Assign class mode
         st.session_state["pending_class"] = name
         st.session_state["interaction_mode"] = "Assign class"
 
-    c4.button(
-        "Select",
+    c3.button(
+        "Assign label",
         key=f"{key}_select",
         use_container_width=True,
         on_click=_select,
+        help="Click masks to label cells",
     )
 
 
@@ -298,18 +298,13 @@ def class_selection_fragment():
 
     rec = get_current_rec()
     labels = ss.setdefault("all_classes", ["No label"])
-    labdict = rec.get("labels", {}) if isinstance(rec.get("labels"), dict) else {}
 
     # Unlabel row
-    create_row(
-        "No label", sum(1 for v in labdict.values() if v is None), key="use_unlabel"
-    )
+    create_row("No label", key="use_unlabel")
 
     # Actual classes
     for name in [c for c in labels if c != "No label"]:
-        create_row(
-            name, sum(1 for v in labdict.values() if v == name), key=f"use_{name}"
-        )
+        create_row(name, key=f"use_{name}")
 
     if st.button(
         key="clear_labels_btn", use_container_width=True, label="Clear mask labels"

@@ -457,3 +457,52 @@ def build_cellpose_zip_bytes():
         )
 
     return buf.getvalue()
+
+
+# -----------------------------------------------------#
+# ----------     SEGMENTATION FUNCTIONS.     --------- #
+# -----------------------------------------------------#
+
+
+def segment_current_and_refresh():
+    """calls cellpose to segment the current image"""
+    rec = get_current_rec()
+    if rec is not None:
+        params = get_cellpose_hparams_from_state()
+        segment_with_cellpose(rec, **params)
+        st.session_state["edit_canvas_nonce"] += 1
+    st.rerun()
+
+
+def batch_segment_and_refresh():
+    """calls cellpose to segment all images with progress bar"""
+    ok = ordered_keys()
+    params = get_cellpose_hparams_from_state()
+    n = len(ok)
+    pb = st.progress(0.0, text="Starting…")
+    for i, k in enumerate(ok, 1):
+        segment_with_cellpose(st.session_state.images.get(k), **params)
+        pb.progress(i / n, text=f"Segmented {i}/{n}")
+    pb.empty()
+    st.session_state["edit_canvas_nonce"] += 1
+    st.rerun()
+
+
+def get_cellpose_hparams_from_state():
+    """calls hparam values from session state"""
+    # Build kwargs matching segment_rec_with_cellpose signature
+    ch1 = int(st.session_state.get("cp_ch1"))
+    ch2 = int(st.session_state.get("cp_ch2"))
+    diameter = st.session_state.get("cp_diameter")
+    # ensure None if 0.0 when Auto
+    if st.session_state.get("cp_diam_mode", "Auto (None)") == "Auto (None)":
+        diameter = None
+
+    return dict(
+        channels=(ch1, ch2),
+        diameter=diameter,
+        cellprob_threshold=float(st.session_state.get("cp_cellprob_threshold")),
+        flow_threshold=float(st.session_state.get("cp_flow_threshold")),
+        min_size=int(st.session_state.get("cp_min_size")),
+        niter=int(st.session_state.get("cp_niter")),
+    )

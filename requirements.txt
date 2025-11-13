@@ -22,15 +22,9 @@ opencv-contrib-python==4.10.0.84
 opencv_python_headless==4.11.0.86
 tifffile==2024.9.20
 sam2
+huggingface_hub
 
 # Visualization and web app
 plotly==6.3.1
-hydralit==1.0.14
-hydralit_components==1.0.10
 streamlit==1.40.0
-streamlit-drawable-canvas==0.9.3
 streamlit-image-coordinates==0.1.9   # last pre-2025 release, works with 1.40
-streamlit_image_annotation
-
-#git+https://github.com/facebookresearch/sam2.git may be removed
-huggingface_hub

@@ -7,13 +7,15 @@ from helpers.mask_editing_functions import (
     render_box_tools_fragment,
     render_mask_tools_fragment,
     render_display_and_interact_fragment,
-    segment_current_and_refresh,
-    batch_segment_and_refresh,
 )
 from helpers.classifying_functions import (
     classify_actions_fragment,
     class_selection_fragment,
     class_manage_fragment,
+)
+from helpers.cellpose_functions import (
+    segment_current_and_refresh,
+    batch_segment_and_refresh,
 )
 
 from helpers.upload_download_functions import (
