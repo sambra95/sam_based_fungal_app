@@ -27,7 +27,7 @@ from helpers.upload_download_functions import (
 
 def render_segment_sidebar(*, key_ns: str = "side"):
     with st.container(border=True):
-        st.subheader("Segment with Cellpose:")
+        st.subheader("Segmentation controls:")
 
         col1, col2 = st.columns([1, 1])
 
@@ -57,8 +57,6 @@ def render_segment_sidebar(*, key_ns: str = "side"):
         ):
             render_cellpose_hyperparameters_fragment()
 
-        st.subheader("Segment individual cells:")
-
         with st.popover(
             "Segment cells with SAM2",
             use_container_width=True,
@@ -67,7 +65,7 @@ def render_segment_sidebar(*, key_ns: str = "side"):
             render_box_tools_fragment(key_ns)
 
         with st.popover(
-            "Manually segment cells",
+            "Manually add & remove masks",
             use_container_width=True,
             help="Manually add and remove cell masks.",
         ):
@@ -103,7 +101,6 @@ def render_download_button():
     ok = ordered_keys() if images else []
 
     with st.container(border=True):
-        st.header("Download dataset:")
         with st.popover(label="Download options", use_container_width=True):
             c1, c2 = st.columns(2)
             overlay = c1.checkbox(

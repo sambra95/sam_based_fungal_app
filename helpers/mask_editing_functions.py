@@ -532,18 +532,28 @@ def render_box_tools_fragment(key_ns="side"):
     rec = get_current_rec()
     c1, c2 = st.columns([1, 1])
 
-    if c1.button("Draw box", use_container_width=True, key=f"{key_ns}_draw_boxes"):
+    if c1.button(
+        "Draw box",
+        use_container_width=True,
+        key=f"{key_ns}_draw_boxes",
+        help="Click and drag boxes around cells",
+    ):
         st.session_state["interaction_mode"] = "Draw box"
         st.rerun()
 
-    if c2.button("Clear boxes", use_container_width=True, key="clear_boxes_button"):
+    if c2.button(
+        "Clear boxes",
+        use_container_width=True,
+        key="clear_boxes_button",
+        help="Remove all boxes",
+    ):
         _clear_boxes(rec)
 
     if st.button(
         "Generate masks from boxes",
         use_container_width=True,
         key=f"{key_ns}_predict",
-        help="Remember to click complete first!",
+        help="Use SAM2 to segment cells in boxes",
     ):
         new_masks = segment_with_sam2(rec)
         for mask in new_masks:
@@ -598,7 +608,10 @@ def render_mask_tools_fragment(key_ns="side"):
         st.rerun()
 
     if c2.button(
-        "Remove last mask", use_container_width=True, key=f"{key_ns}_undo_mask"
+        "Undo mask",
+        use_container_width=True,
+        key=f"{key_ns}_undo_mask",
+        help="Remove last mask",
     ):
         max_id = int(rec["masks"].max())
         if max_id > 0:
