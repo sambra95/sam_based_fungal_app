@@ -277,9 +277,6 @@ def segment_with_sam2(rec: dict):
                 point_coords=None, point_labels=None, box=batch, multimask_output=True
             )
 
-        # remove object from memory
-        del img_float
-
         # to numpy
         if isinstance(masks, torch.Tensor):
             masks = masks.detach().cpu().numpy()
