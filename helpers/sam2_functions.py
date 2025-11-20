@@ -10,6 +10,61 @@ from sam2.sam2_image_predictor import SAM2ImagePredictor
 import plotly.graph_objects as go
 
 
+# masks can be cut when adding them to the existing array (new masks lose priority).
+# therefore, add mask, rextract to see if it is cut, if so, take it out and re-add the largest section
+def keep_largest_part(mask: np.ndarray) -> np.ndarray:
+    """Return only the largest connected component of a boolean mask."""
+    if not np.any(mask):
+        return np.zeros_like(mask, dtype=bool)
+    lab, n = ndi.label(mask)
+    if n == 1:
+        return mask.astype(bool)
+    sizes = np.bincount(lab.ravel())
+    sizes[0] = 0
+    return lab == sizes.argmax()
+
+
+# duplicated function from mas_editing_functions to avoid circular import
+def integrate_new_mask(original: np.ndarray, new_binary: np.ndarray):
+    """
+    Add a new mask into a label image.
+    - original: (H,W) int labels, 0=background, 1..N instances
+    - new_binary: (H,W) boolean mask
+    Returns (updated_label_image, new_id or None)
+    """
+    out = original
+    nb = new_binary.astype(bool)
+    if nb.ndim != 2 or not nb.any():
+        return out, None
+
+    # write only where background
+    write = (out == 0) & nb
+    if not write.any():
+        return out, None
+
+    max_id = int(out.max(initial=0))
+    new_id = max_id + 1
+
+    # upcast if needed
+    if new_id > np.iinfo(out.dtype).max:
+        out = out.astype(np.uint32)
+    else:
+        out = out.copy()
+
+    out[write] = new_id
+
+    # --- check contiguity: keep only the largest surviving component ---
+    mask_new = out == new_id
+    mask_new = keep_largest_part(mask_new)
+    if not mask_new.any():
+        return original, None  # nothing left after check
+
+    out[out == new_id] = 0  # clear possibly cut version
+    out[mask_new] = new_id  # reapply only largest part
+
+    return out, new_id
+
+
 # duplicated function from mas_editing_functions to avoid circular import
 def _make_base_figure(bg_img, disp_w: int, disp_h: int, dragmode: str) -> go.Figure:
     """
@@ -201,56 +256,62 @@ def segment_with_sam2(rec: dict):
     if boxes.size == 0:
         st.info("No boxes drawn yet.")
         return []
-    if boxes.ndim == 1:
-        boxes = boxes[None, :]  # (1,4)
-
-    # drop degenerate
-    w, h = boxes[:, 2] - boxes[:, 0], boxes[:, 3] - boxes[:, 1]
-    boxes = boxes[(w > 0) & (h > 0)]
-    if boxes.size == 0:
-        st.info("All boxes were empty.")
-        return []
 
     predictor, device = _load_sam2()
 
+    # load the model
     img_float = prep_image_for_sam2(rec["image"])
     amp = (
         torch.autocast("cuda", dtype=torch.bfloat16)
         if device == "cuda"
         else nullcontext()
     )
-    with torch.inference_mode(), amp:
-        predictor.set_image(img_float)
-        masks, scores, _ = predictor.predict(
-            point_coords=None, point_labels=None, box=boxes, multimask_output=True
-        )
 
-    # to numpy
-    if isinstance(masks, torch.Tensor):
-        masks = masks.detach().cpu().numpy()
-    if isinstance(scores, torch.Tensor):
-        scores = scores.detach().cpu().numpy()
-
-    # normalize shapes:
-    if masks.ndim == 3:
-        masks = masks[None, ...]
-    if scores.ndim == 1:
-        scores = scores[None, ...]
-
-    B = scores.shape[0]
-    best = scores.argmax(-1)  # (B,)
-    masks_best = masks[np.arange(B), best]  # (B,H,W)
-
-    H, W = int(rec["H"]), int(rec["W"])
-    out = []
-    for mi in masks_best:
-        mi = mi > 0
-        if mi.shape != (H, W):
-            mi = np.array(
-                Image.fromarray(mi.astype(np.uint8)).resize((W, H), Image.NEAREST),
-                dtype=bool,
+    # batched predictions to prevent online crashes
+    box_batches = [boxes[i : i + 8] for i in range(0, len(boxes), 8)]
+    for batch in box_batches:
+        with torch.inference_mode(), amp:
+            predictor.set_image(img_float)
+            masks, scores, _ = predictor.predict(
+                point_coords=None, point_labels=None, box=batch, multimask_output=True
             )
-        out.append(mi)
+
+        # remove object from memory
+        del img_float
+
+        # to numpy
+        if isinstance(masks, torch.Tensor):
+            masks = masks.detach().cpu().numpy()
+        if isinstance(scores, torch.Tensor):
+            scores = scores.detach().cpu().numpy()
+
+        # normalize shapes:
+        if masks.ndim == 3:
+            masks = masks[None, ...]
+        if scores.ndim == 1:
+            scores = scores[None, ...]
+
+        B = scores.shape[0]
+        best = scores.argmax(-1)  # (B,)
+        masks_best = masks[np.arange(B), best]  # (B,H,W)
+
+        H, W = int(rec["H"]), int(rec["W"])
+        new_masks = []
+        for mi in masks_best:
+            mi = mi > 0
+            if mi.shape != (H, W):
+                mi = np.array(
+                    Image.fromarray(mi.astype(np.uint8)).resize((W, H), Image.NEAREST),
+                    dtype=bool,
+                )
+            new_masks.append(mi)
+
+        for mask in new_masks:
+            inst, new_id = integrate_new_mask(rec["masks"], mask)
+            if new_id is not None:
+                rec["masks"] = inst
+                rec.setdefault("labels", {})[int(new_id)] = rec["labels"].get(
+                    int(new_id), None
+                )
 
     _clear_boxes(rec)
-    return out  # list of boalean mask (best mask for each box)

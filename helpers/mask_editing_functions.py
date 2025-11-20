@@ -555,14 +555,8 @@ def render_box_tools_fragment(key_ns="side"):
         key=f"{key_ns}_predict",
         help="Use SAM2 to segment cells in boxes",
     ):
-        new_masks = segment_with_sam2(rec)
-        for mask in new_masks:
-            inst, new_id = integrate_new_mask(rec["masks"], mask)
-            if new_id is not None:
-                rec["masks"] = inst
-                rec.setdefault("labels", {})[int(new_id)] = rec["labels"].get(
-                    int(new_id), None
-                )
+        # create new masks from boxes and add them to rec["mask"]
+        segment_with_sam2(rec)
 
         st.session_state["pred_canvas_nonce"] += 1
         st.session_state["edit_canvas_nonce"] += 1
