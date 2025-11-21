@@ -32,12 +32,19 @@ ss = st.session_state
 
 
 def process_uploads(files, mask_suffix):
+    """Process uploaded files: add images and masks to state. Return list of skipped filenames."""
+
+    # early exit if no uploaded files
     if not files:
         return []
     skipped = []
 
+    # separate images and masks
     mask_suffix_len = len(mask_suffix)
     imgs = [(f) for f in files if not stem(f.name).endswith(mask_suffix)]
+    masks = [f for f in files if stem(f.name).endswith(mask_suffix)]
+
+    # process images
     for f in imgs:
         try:
             create_new_record_with_image(f)
@@ -48,7 +55,7 @@ def process_uploads(files, mask_suffix):
     if ok:
         set_current_by_index(len(ok) - 1)
 
-    masks = [f for f in files if stem(f.name).endswith(mask_suffix)]
+    # process masks
     if masks and ss.images:
         stem_to_key = {stem(rec["name"]): k for k, rec in ss.images.items()}
         for f in masks:
@@ -107,22 +114,29 @@ def load_tif_mask(file, rec):
 
 
 def create_new_record_with_image(uploaded_file):
+    """Create a new image record in state from uploaded file."""
+
+    # get name mappings and images dict
     name = uploaded_file.name
     m = st.session_state.name_to_key
     imgs = st.session_state.images
+
+    # check for existing name
     if name in m:
         st.session_state.current_key = m[name]
         return
 
     try:
+        # load image and convert to RGB
         img_np = np.array(Image.open(uploaded_file).convert("RGB"), dtype=np.uint8)
-        img_np = resize_with_aspect_ratio(
-            img_np, patch_size=512
-        )  # images are always resized to 512x512
+        # images are always resized to 512x512
+        img_np = resize_with_aspect_ratio(img_np, patch_size=512)
     except (UnidentifiedImageError, Exception):
         raise
 
+    # get image dimensions
     H, W = img_np.shape[:2]
+    # create new record
     k = st.session_state.next_ord
     st.session_state.next_ord += 1
     imgs[k] = {
@@ -145,9 +159,11 @@ def render_images_form():
     """display the uploaded images table"""
     ss, ok = st.session_state, sorted(st.session_state.images)
 
+    # helper to check if mask present
     def is_mask(m):
         return isinstance(m, np.ndarray) and m.any()
 
+    # build rows in the uploaded images table
     rows = []
     for k in ok:
         rec, m = ss.images[k], ss.images[k].get("masks")
@@ -164,6 +180,7 @@ def render_images_form():
             }
         )
 
+    # render the data editor
     with st.form("images_form"):
         edited = st.data_editor(
             pd.DataFrame(rows, index=ok),
@@ -173,6 +190,7 @@ def render_images_form():
             column_config={"Remove": st.column_config.CheckboxColumn()},
             disabled=["Image", "Masks Present", "Number of Masks", "Number of Labels"],
         )
+        # handle removals
         if st.form_submit_button("Remove selected images", use_container_width=True):
             for k in edited.loc[edited["Remove"]].index:
                 ss.images.pop(k, None)
@@ -200,6 +218,9 @@ def counts_for_rec(rec) -> dict:
 def build_masks_images_zip(
     state_images, key_order, include_overlay: bool, include_counts: bool
 ) -> bytes:
+    """Build a ZIP file with masks, images (optionally with overlays), and summary CSV.
+    Return the ZIP file as bytes."""
+
     buf = io.BytesIO()
     with ZipFile(buf, mode="w", compression=ZIP_DEFLATED) as zf:
         # Class color palette (only if overlays requested)

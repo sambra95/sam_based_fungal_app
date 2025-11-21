@@ -15,7 +15,7 @@ from helpers.densenet_functions import (
     load_labeled_patches,
     finetune_densenet,
     evaluate_fine_tuned_densenet,
-    plot_densenet_loss_curve,
+    plot_loss_curve,
     build_densenet_zip_bytes,
 )
 from helpers.cellpose_functions import (
@@ -47,7 +47,7 @@ def render_densenet_options(key_ns="train_densenet"):
     render_densenet_summary_fragment()
 
     c1, c2, c4 = st.columns(3)
-
+    # options for densenet training with defaults already set
     ss["dn_input_size"] = c1.selectbox(
         "Input size",
         options=[64, 96, 128],
@@ -85,7 +85,7 @@ def render_densenet_summary_fragment():
     st.info(
         f"Training set: {int(counts.sum())} labelled cells across {len(classes)} classes."
     )
-    # --- Pretty, form-like card with rounded edges ---
+    # Pretty, form-like card with rounded edges
     st.dataframe(
         freq_df,
         use_container_width=True,
@@ -122,6 +122,8 @@ def render_densenet_train_fragment():
 
 def show_densenet_training_plots():
     """Render saved DenseNet training plots from session state (if available)."""
+
+    # check for uploaded data
     k1, k2 = "densenet_training_metrics", "densenet_training_metrics"
     if (k1 not in st.session_state) and (k2 not in st.session_state):
         st.info("No fine-tuning data available. Tune a model first.")
@@ -273,10 +275,14 @@ def render_cellpose_options(key_ns="train_cellpose"):
 
 
 def render_cellpose_train_fragment():
+    """Runs the full Cellpose fine-tuning pipeline when the button is clicked."""
+
+    # start fine-tuning when button clicked
     go = st.button("Fine-tune Cellpose", use_container_width=True, type="primary")
     if not go:
         return
 
+    # gather training data
     recs = {k: st.session_state["images"][k] for k in ordered_keys()}
     base_model = ss.get("cp_base_model")
     epochs = int(ss.get("cp_max_epoch"))
@@ -285,6 +291,7 @@ def render_cellpose_train_fragment():
     nimg = int(ss.get("cp_batch_size"))
     channels = ss.get("cellpose_channels")
 
+    # fine-tune the cellpose model
     with st.spinner("Fine-tuning Cellpose…"):
         train_losses, test_losses, model_name = finetune_cellpose(
             recs,
@@ -296,16 +303,19 @@ def render_cellpose_train_fragment():
             channels=channels,
         )
 
+        # store training losses in session state for plotting
         st.session_state["train_losses"] = train_losses
         st.session_state["test_losses"] = test_losses
 
-        st.session_state["cellpose_training_losses"] = plot_densenet_loss_curve(
+        st.session_state["cellpose_training_losses"] = plot_loss_curve(
             train_losses, test_losses
         )
 
-    # ----- Prepare a (possibly subsampled) evaluation set -----
+    # prepare a (possibly subsampled) evaluation set
     masks = [rec["masks"] for rec in recs.values()]
     images = [rec["image"] for rec in recs.values()]
+
+    # subsample to max 50 images for speed
     N = len(images)
     sample_n = min(50, N)
     if N > sample_n:
@@ -314,11 +324,11 @@ def render_cellpose_train_fragment():
         images = [images[i] for i in idx]
         masks = [masks[i] for i in idx]
 
-    # ----- OPTIONAL: Hyperparameter grid search -----
+    # OPTIONAL: hyperparameter grid search
     if ss.get("cp_do_gridsearch"):
         st.subheader("Hyperparameter tuning (grid search)")
 
-        # Parse user grid text inputs into lists
+        # parse user grid text inputs into lists
         def _parse_float_list(s, default):
             s = (s or "").strip()
             if not s:
@@ -337,6 +347,7 @@ def render_cellpose_train_fragment():
             except Exception:
                 return default
 
+        # build grid lists
         grid_cellprob = _parse_float_list(
             ss.get("cp_grid_cellprob", "0.2, 0.0, -0.2"), [0.2, 0.0, -0.2]
         )
@@ -373,6 +384,8 @@ def render_cellpose_train_fragment():
 
             results = []
             pb = st.progress(0.0, text="Starting grid search…")
+
+            # iterate over all hyperparameter combinations and store performance metrics
             for i, (cellprob, flowthresh, niter, min_size) in enumerate(combos, 1):
                 pb.progress(
                     i / total,
@@ -404,7 +417,7 @@ def render_cellpose_train_fragment():
 
             pb.empty()
 
-            # Store + show results (no CSV write)
+            # store grid results dataframe in session state for later display
             df = pd.DataFrame(results).sort_values(
                 by="ap_iou_0.5", ascending=False, na_position="last"
             )
@@ -412,7 +425,7 @@ def render_cellpose_train_fragment():
 
             st.success(f"Fine-tuning complete ✅ (model: {model_name})")
 
-            # Pick best and push into session state used by the mask editing panel
+            # Pick best hyperparameters and push into session state used by the mask editing panel
             if not df.empty and np.isfinite(df["ap_iou_0.5"].iloc[0]):
                 best = df.iloc[0]
                 ss["cp_cellprob_threshold"] = float(best["cellprob"])
@@ -427,7 +440,7 @@ def render_cellpose_train_fragment():
             else:
                 st.info("No valid result to set best hyperparameters.")
 
-    # ----- Plot model comparison afterwards -----
+    #  plot model comparison
     with st.spinner("Validating model…"):
         use_gpu = core.use_gpu()
         base_model = models.CellposeModel(gpu=use_gpu, model_type=ss["cp_base_model"])
@@ -463,6 +476,8 @@ def render_cellpose_train_fragment():
 
 def show_cellpose_training_plots():
     """Render saved Cellpose plots from session state (if available)."""
+
+    # check for uploaded data
     if "cellpose_training_losses" not in st.session_state:
         st.header("Cellpose Training Summary")
         st.info("No fine-tuning data to show.")
@@ -474,27 +489,34 @@ def show_cellpose_training_plots():
 
         col1, col2 = st.columns(2)
         with col1:
+
+            # plot training losses
             st.plotly_chart(
                 st.session_state["cellpose_training_losses"],
                 use_container_width=True,
             )
 
+            # plot original vs predicted counts
             st.plotly_chart(
                 st.session_state["cellpose_original_counts_comparison"],
                 use_container_width=True,
             )
 
         with col2:
+
+            # plot iou comparison
             st.plotly_chart(
                 st.session_state["cellpose_iou_comparison"],
                 use_container_width=True,
             )
 
+            # plot tuned vs predicted counts
             st.plotly_chart(
                 st.session_state["cellpose_tuned_counts_comparison"],
                 use_container_width=True,
             )
 
+        # display grid search results if applicable
         if ss.get("cp_do_gridsearch"):
             st.dataframe(
                 st.session_state["cp_grid_results_df"],

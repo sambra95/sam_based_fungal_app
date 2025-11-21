@@ -23,6 +23,7 @@ class_colour_hexes = [
 
 
 def hex_to_rgb01(hx: str) -> tuple[float, float, float]:
+    """Convert hex color string to (r,g,b) in 0..1 range."""
     return tuple(int(hx[i : i + 2], 16) / 255.0 for i in (1, 3, 5))
 
 
@@ -44,6 +45,7 @@ def color_hex_for(name: str) -> str:
 
 
 def color_chip_md(hex_color: str, size: int = 14) -> str:
+    """Return HTML markdown for a color chip of given hex color and size."""
     return (
         f'<span style="display:inline-block;'
         f"width:{size}px;height:{size}px;margin-top:2px;"
@@ -53,6 +55,7 @@ def color_chip_md(hex_color: str, size: int = 14) -> str:
 
 
 def rename_class_from_input(old_key: str, new_key: str):
+    """Rename class based on input box value; clears input box after use."""
     ss = st.session_state
     old = ss.get(old_key)
     new = (ss.get(new_key, "") or "").strip()
@@ -195,6 +198,10 @@ def create_colour_palette(class_names):
 
 
 def classes_map_from_labels(masks, labels):
+    """
+    Given masks array and labels dict {inst_id: class_name}, return
+    {inst_id: class_name} for all inst_ids in masks (excluding 0
+    """
     inst = np.asarray(masks)
     if inst.ndim != 2 or inst.size == 0:
         return {}
@@ -208,6 +215,9 @@ def classes_map_from_labels(masks, labels):
 
 
 def create_row(name: str, key: str, mode_ns: str = "side"):
+    """
+    Create a single class selection row with color chip, name, count, and select button.
+    """
     # icon | name | count | select |
     c1, c2, c3 = st.columns([1, 5, 5])
     c1.markdown(color_chip_md(color_hex_for(name)), unsafe_allow_html=True)
@@ -228,6 +238,7 @@ def create_row(name: str, key: str, mode_ns: str = "side"):
 
 
 def add_label_from_input(labels, new_label_ss):
+    """Add a new label from input box; clears input box after use."""
     new_label = new_label_ss.strip()
     if not new_label:
         return
@@ -248,6 +259,7 @@ def add_label_from_input(labels, new_label_ss):
 def classify_actions_fragment():
     rec = get_current_rec()
 
+    # buttons to classify masks in current image or batch classify all images
     col1, col2 = st.columns(2)
     with col1:
         if st.button(
@@ -289,7 +301,7 @@ def batch_classify():
 
 def class_selection_fragment():
 
-    # Promote any pending class BEFORE widgets are created
+    # Create class selection rows
     ss = st.session_state
     if "pending_class" in ss:
         pc = ss.pop("pending_class")
@@ -301,13 +313,14 @@ def class_selection_fragment():
     rec = get_current_rec()
     labels = ss.setdefault("all_classes", ["No label"])
 
-    # Unlabel row
+    # Unlabeled row
     create_row("No label", key="use_unlabel")
 
     # Actual classes
     for name in [c for c in labels if c != "No label"]:
         create_row(name, key=f"use_{name}")
 
+    # button to clear all labels in current image
     if st.button(
         key="clear_labels_btn", use_container_width=True, label="Clear mask labels"
     ):
@@ -327,7 +340,7 @@ def class_manage_fragment(key_ns="side"):
 
     st.markdown("### Add or remove classes")
 
-    # --- Add new class ---
+    # add new class by typing in the text box
     st.text_input(
         "",
         key="side_new_label",
@@ -335,7 +348,7 @@ def class_manage_fragment(key_ns="side"):
         on_change=add_label_from_input(labels, ss.get("side_new_label", "")),
     )
 
-    # --- Delete existing class (now as dropdown) ---
+    # delete class by selecting from dropdown list
     editable = [c for c in labels if c != "No label"]
     if editable:
         del_class = st.selectbox(
@@ -351,7 +364,7 @@ def class_manage_fragment(key_ns="side"):
         st.caption("No classes yet. Add a class above first.")
         return
 
-    # --- Rename class ---
+    # rename class by selecting from dropdown and typing new name
     c1, c2 = st.columns([1, 2])
     with c1:
         st.selectbox("Class to relabel", options=editable, key=f"{key_ns}_rename_from")

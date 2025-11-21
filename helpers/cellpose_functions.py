@@ -24,7 +24,10 @@ import plotly.graph_objects as go
 
 # --- small helper: normalization similar to your earlier pipeline ---
 def normalize_image(image: np.ndarray) -> np.ndarray:
-    """Normalize uint8 images so output stays in [0, 255] with consistent mean."""
+    """
+    Normalizes image intensities for Cellpose input.
+    Scales mean intensity to ~127.5 or full uint8 range if mean <= 0.
+    """
     im = image.astype(np.float32)
     if im.size == 0:
         return im
@@ -47,6 +50,8 @@ def preprocess_for_cellpose(rec):
     """takes record input and prepares the stored image for cellpose"""
 
     img = rec["image"]
+
+    # convert to grayscale if needed
     if img.ndim == 3:
         if img.shape[2] == 4:
             img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
@@ -56,18 +61,20 @@ def preprocess_for_cellpose(rec):
             f"Unsupported image shape {img.shape}; expected (H,W) or (H,W,C)"
         )
 
+    # normalize
     im_in = normalize_image(img)
 
     return im_in
 
 
 def convert_cellpose_mask_to_single_array(mask_output, H, W):
-    """takes mask output from cellpose and converts to a single matrix where different masks are defined by different integers"""
+    """Converts Cellpose output mask to single (H,W) label image with contiguous ids 1..N"""
 
-    # ---- convert to single (H,W) label image with contiguous ids 1..N ----
+    # handle empty mask case
     if mask_output is None or mask_output.size == 0:
         inst = np.zeros((H, W), dtype=np.uint8)
         K = 0
+    # handle standard case
     else:
         a = np.asarray(mask_output)
         if a.shape != (H, W):
@@ -75,7 +82,7 @@ def convert_cellpose_mask_to_single_array(mask_output, H, W):
             a = np.array(
                 Image.fromarray(a).resize((W, H), Image.NEAREST), dtype=a.dtype
             )
-
+        # remap ids to contiguous 1..K
         vals = np.unique(a)
         ids = vals[vals > 0]
         if ids.size == 0:
@@ -100,6 +107,7 @@ def convert_cellpose_mask_to_single_array(mask_output, H, W):
 
 # --- materialize session model bytes to a stable temp path ---
 def get_cellpose_weights() -> str | None:
+    """writes Cellpose model bytes from session state to a temp file and returns the path"""
     ss = st.session_state
     b = ss.get("cellpose_model_bytes", None)
     name = ss.get("cellpose_model_name", None)
@@ -120,6 +128,7 @@ def get_cellpose_weights() -> str | None:
 # --- cache the loaded Cellpose model so we don't reload every call ---
 @st.cache_resource(show_spinner="Loading Cellpose weights…")
 def get_cellpose_model():
+    """loads Cellpose model from session state bytes or falls back to built-in weights"""
     ss = st.session_state
     # tag tracks which bytes are loaded
     tag = (
@@ -128,9 +137,11 @@ def get_cellpose_model():
         else "cyto2"
     )
 
+    # return cached model if already loaded
     if ss.get("cellpose_model_obj") is not None and ss.get("cellpose_model_tag") == tag:
         return ss["cellpose_model_obj"]
 
+    # load model from bytes
     weights_path = get_cellpose_weights()
     if weights_path:
         model = models.CellposeModel(pretrained_model=weights_path)
@@ -138,8 +149,10 @@ def get_cellpose_model():
         # fallback built-in weights
         model = models.CellposeModel(pretrained_model="cyto2")
 
+    # stash in session
     ss["cellpose_model_obj"] = model
     ss["cellpose_model_tag"] = tag
+
     return model
 
 
@@ -215,6 +228,9 @@ def compute_prediction_ious(images, masks, model, channels):
 
 
 def plot_iou_comparison(base_ious, tuned_ious):
+    """Plots a bar chart comparing mean IoU of base and fine-tuned Cellpose models with error bars."""
+
+    # prepare data
     labels = ["Base Model", "Fine-tuned"]
     x = [0, 1]
     means = [np.mean(base_ious), np.mean(tuned_ious)]
@@ -223,6 +239,7 @@ def plot_iou_comparison(base_ious, tuned_ious):
         np.std(tuned_ious, ddof=1) if len(tuned_ious) > 1 else 0.0,
     ]
 
+    # create figure
     fig = go.Figure(layout=dict(barcornerradius=10))
     fig.add_bar(
         x=x,
@@ -238,6 +255,7 @@ def plot_iou_comparison(base_ious, tuned_ious):
         ),
     )
 
+    # add individual data points with jitter
     j = 0.12
     fig.add_scatter(
         x=(np.full(len(base_ious), x[0]) + (np.random.rand(len(base_ious)) - 0.5) * j),
@@ -254,6 +272,7 @@ def plot_iou_comparison(base_ious, tuned_ious):
         marker=dict(color="#004280", size=6),
     )
 
+    # layout settings
     fig.update_layout(
         title="IoU Comparison",
         xaxis=dict(tickmode="array", tickvals=x, ticktext=labels, range=[-0.6, 1.6]),
@@ -264,11 +283,17 @@ def plot_iou_comparison(base_ious, tuned_ious):
     )
     fig.update_xaxes(showgrid=True)
     fig.update_yaxes(showgrid=True, gridcolor="rgba(0,0,0,0.1)")
+
     return fig
 
 
 def plot_pred_vs_true_counts(gt_counts, base_counts, title):
+    """Plots predicted vs true counts scatter plot with R² and MAE annotations."""
+
+    # determine plot limits
     lim = max(1, max(gt_counts + base_counts))
+
+    # create figure
     fig = go.Figure()
     fig.add_scatter(
         x=gt_counts,
@@ -284,6 +309,7 @@ def plot_pred_vs_true_counts(gt_counts, base_counts, title):
         line=dict(dash="dash", width=1, color="gray"),
         showlegend=False,
     )
+    # add annotations if more than one data point
     if len(gt_counts) > 1:
         fig.add_annotation(
             xref="paper",
@@ -296,6 +322,8 @@ def plot_pred_vs_true_counts(gt_counts, base_counts, title):
             opacity=0.7,
             align="left",
         )
+
+    # layout settings
     fig.update_layout(
         title=title,
         xaxis_title="True number of masks",
@@ -304,6 +332,8 @@ def plot_pred_vs_true_counts(gt_counts, base_counts, title):
         paper_bgcolor="white",
         showlegend=False,
     )
+
+    # set axes ranges and grid
     fig.update_xaxes(range=[-0.5, lim + 0.5], showgrid=True)
     fig.update_yaxes(
         range=[-0.5, lim + 0.5], showgrid=True, gridcolor="rgba(0,0,0,0.1)"
@@ -325,6 +355,8 @@ def finetune_cellpose(
     nimg_per_epoch=32,
     channels=[0, 0],
 ):
+    """Fine-tunes Cellpose on the given records and returns training losses, test losses, and model name."""
+
     images, masks = [], []
     for k in recs.keys():
         images.append(preprocess_for_cellpose(recs[k]))
@@ -373,11 +405,13 @@ def finetune_cellpose(
 
 
 def is_not_empty_mask(m):
+    """returns True if mask is a non-empty numpy array"""
     return isinstance(m, np.ndarray) and m.any()
 
 
 # Plots
 def add_plotly_as_png_to_zip(fig_key, zip_file, out_path, default_w=900, default_h=400):
+    """Adds a plotly figure stored in st.session_state[fig_key] as a PNG to the given zip file."""
     fig = st.session_state[fig_key]
     png = pio.to_image(
         fig,
@@ -390,12 +424,14 @@ def add_plotly_as_png_to_zip(fig_key, zip_file, out_path, default_w=900, default
 
 
 def build_cellpose_zip_bytes():
-    """Assemble the ZIP archive from session state data."""
+    """Builds a zip file containing the fine-tuned Cellpose model, training parameters,
+    images, masks, and plots. Returns the zip file as bytes."""
 
     ok = ordered_keys()
     ss = st.session_state
     n_masks = sum((int(len(np.unique(ss["images"][k])) - 1)) for k in ok)
 
+    # extract training parameters
     params = dict(
         base_model=ss.get("cp_base_model"),
         epochs=int(ss.get("cp_max_epoch")),
@@ -406,6 +442,7 @@ def build_cellpose_zip_bytes():
         masks_used=n_masks,
     )
 
+    # Build zip in memory
     buf = IO.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("cellpose_model.pt", ss["cellpose_model_bytes"])
@@ -439,6 +476,7 @@ def build_cellpose_zip_bytes():
             Image.fromarray(np.asarray(rec["masks"])).save(c, "TIFF")
             z.writestr(f"masks/{img_name}_masks.tif", c.getvalue())
 
+        # Plots
         add_plotly_as_png_to_zip(
             "cellpose_training_losses", z, "plots/cellpose_training_losses.png"
         )

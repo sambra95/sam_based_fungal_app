@@ -73,7 +73,7 @@ def _make_base_figure(bg_img, disp_w: int, disp_h: int, dragmode: str) -> go.Fig
     Used by both 'Draw box' and 'Draw mask' modes.
     """
     fig = go.Figure()
-
+    # add background image
     fig.add_layout_image(
         dict(
             source=bg_img,
@@ -87,7 +87,7 @@ def _make_base_figure(bg_img, disp_w: int, disp_h: int, dragmode: str) -> go.Fig
             layer="below",
         )
     )
-
+    # set axes properties
     fig.update_xaxes(visible=False, range=[0, disp_w], constrain="domain")
     fig.update_yaxes(
         visible=False,
@@ -95,7 +95,6 @@ def _make_base_figure(bg_img, disp_w: int, disp_h: int, dragmode: str) -> go.Fig
         scaleanchor="x",
         scaleratio=1,
     )
-
     fig.update_layout(
         dragmode=dragmode,
         margin=dict(l=0, r=0, t=0, b=0),
@@ -174,8 +173,12 @@ def _update_boxes(chart_key: str, rec: dict):
 
 
 def _make_figure_with_boxes(bg_img, disp_w, disp_h, rec: dict):
+    """Create a Plotly figure with background image and drawn boxes overlayed."""
+
+    # create base figure
     fig = _make_base_figure(bg_img, disp_w, disp_h, dragmode="select")
 
+    # add boxes
     for box in rec.get("boxes_display", []):
         fig.add_shape(
             type="rect",
@@ -199,13 +202,14 @@ def _clear_boxes(rec: dict):
 
 @st.fragment
 def box_draw_fragment(bg_img, disp_w, disp_h, chart_key: str, rec: dict):
+    """Render the Plotly chart for 'Draw box' mode, with box selection handling."""
     fig = _make_figure_with_boxes(bg_img, disp_w, disp_h, rec)
     st.plotly_chart(
         fig,
         key=chart_key,
         selection_mode="box",
         on_select=lambda: _update_boxes(chart_key, rec),
-        use_container_width=False,  # 🔒 respect fig.width / fig.height
+        use_container_width=False,  # respects fig.width / fig.height
     )
 
 
@@ -225,20 +229,21 @@ def prep_image_for_sam2(img: np.ndarray) -> np.ndarray:
 
 @st.cache_resource(show_spinner="Loading SAM2 weights…")
 def _load_sam2():
+    """Load SAM2 model and return predictor and device."""
+
+    # determine device
     device = (
         "cuda"
         if torch.cuda.is_available()
         else ("mps" if torch.backends.mps.is_available() else "cpu")
     )
 
-    # use package config string (resolved by the installed sam2 package)
+    # load model and build the mode
     CFG_PATH = "configs/sam2.1/sam2.1_hiera_l.yaml"
-    # download checkpoint to local HF cache and use its path
     CKPT_PATH = hf_hub_download(
         repo_id="facebook/sam2.1-hiera-large",
         filename="sam2.1_hiera_large.pt",
     )
-    # --- minimal additions end ---
 
     sam = build_sam2(
         CFG_PATH,
@@ -246,22 +251,30 @@ def _load_sam2():
         device=device,
         apply_postprocessing=False,  # post-processing not supported with MPS :(
     )
+
     predictor = SAM2ImagePredictor(sam)
+
     return predictor, device
 
 
 def segment_with_sam2(rec: dict):
     """input is record for prediction. boxes to guide prediction will be extracted wtih "boxes" key.
     Return a list of (H,W) boolean masks (best mask per box."""
+
+    # get boxes
     boxes = np.asarray(rec.get("boxes", []), dtype=np.float32)
+    # nothing to do if there are no boxes
     if boxes.size == 0:
         st.info("No boxes drawn yet.")
         return []
 
+    # load the model
     predictor, device = _load_sam2()
 
-    # load the model
+    # preprocess image
     img_float = prep_image_for_sam2(rec["image"])
+
+    # setup autocast for faster inference on CUDA
     amp = (
         torch.autocast("cuda", dtype=torch.bfloat16)
         if device == "cuda"
@@ -289,12 +302,16 @@ def segment_with_sam2(rec: dict):
         if scores.ndim == 1:
             scores = scores[None, ...]
 
+        # select best mask per box
         B = scores.shape[0]
         best = scores.argmax(-1)  # (B,)
         masks_best = masks[np.arange(B), best]  # (B,H,W)
 
+        # integrate each mask into record
         H, W = int(rec["H"]), int(rec["W"])
         new_masks = []
+
+        # resize masks if needed and collect
         for mi in masks_best:
             mi = mi > 0
             if mi.shape != (H, W):
@@ -304,6 +321,7 @@ def segment_with_sam2(rec: dict):
                 )
             new_masks.append(mi)
 
+        # integrate new masks
         for mask in new_masks:
             inst, new_id = integrate_new_mask(rec["masks"], mask)
             if new_id is not None:
@@ -312,4 +330,5 @@ def segment_with_sam2(rec: dict):
                     int(new_id), None
                 )
 
+    # clear boxes from the record
     _clear_boxes(rec)

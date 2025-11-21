@@ -40,8 +40,10 @@ ss = st.session_state
 def generate_cell_patch(image: np.ndarray, mask: np.ndarray, patch_size: int = 64):
     """takes an image and boolean mask input and a normalized square patch image from the mask"""
 
+    # extract bounding box crop
     im, m = np.asarray(image), np.asarray(mask, bool)
 
+    # handle empty mask case
     ys, xs = np.where(m)
     y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
     crop, mc = im[y0:y1, x0:x1], m[y0:y1, x0:x1]
@@ -50,41 +52,47 @@ def generate_cell_patch(image: np.ndarray, mask: np.ndarray, patch_size: int = 6
     # checks to make sure crop is the correct format
     if crop.ndim == 2:
         crop = np.stack([crop] * 3, axis=-1)
+    # convert to RGB if needed
     elif crop.ndim == 3 and crop.shape[2] == 4:
         crop = cv2.cvtColor(crop, cv2.COLOR_RGBA2RGB)
+    # convert BGR to RGB if needed
     elif crop.ndim == 3 and crop.shape[2] == 3:
-        # assume BGR if from cv; convert to RGB for consistency in augmentation
         crop = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+    # drop extra channels if needed
     else:
         crop = crop[..., :3]
 
+    # resize to patch size
     crop = resize_with_aspect_ratio(crop, patch_size=patch_size)
     return crop.astype(np.float32)
 
 
 def resize_with_aspect_ratio(img: np.ndarray, patch_size=64) -> np.ndarray:
-    """resizes input image to a square of with 'patch_size' height while maintaining the aspect ratio"""
+    """resizes input image to a square with 'patch_size' height while maintaining the aspect ratio"""
+
     th, tw = patch_size, patch_size
     h, w = img.shape[:2]
-    if h == 0 or w == 0:
-        return np.zeros((th, tw, img.shape[2] if img.ndim == 3 else 1), dtype=img.dtype)
+
+    # resize with aspect ratio
     scale = min(th / h, tw / w)
     nw, nh = max(1, int(round(w * scale))), max(1, int(round(h * scale)))
     resized = cv2.resize(
         img, (nw, nh), interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR
     )
-    # center pad
+
+    # pad to target size
     if img.ndim == 2:
         canvas = np.zeros((th, tw), dtype=img.dtype)
         y0, x0 = (th - nh) // 2, (tw - nw) // 2
         canvas[y0 : y0 + nh, x0 : x0 + nw] = resized
-        return canvas
+    # 3-channel case
     else:
         c = img.shape[2]
         canvas = np.zeros((th, tw, c), dtype=img.dtype)
         y0, x0 = (th - nh) // 2, (tw - nw) // 2
         canvas[y0 : y0 + nh, x0 : x0 + nw, :] = resized
-        return canvas
+
+    return canvas
 
 
 def generate_patches_with_ids(rec, patch_size=64):
@@ -94,6 +102,8 @@ def generate_patches_with_ids(rec, patch_size=64):
 
     # extract the individual masks
     ids = [int(v) for v in np.unique(M) if v != 0]
+
+    # generate patches
     patches, keep_ids = [], []
     for iid in ids:
         patches.append(
@@ -476,7 +486,7 @@ def evaluate_fine_tuned_densenet(history, val_gen, classes):
     # 5a) plot densenet training losses and save to session state
     train_losses = history.history.get("loss")
     val_losses = history.history.get("val_loss", [])
-    ss["densenet_training_losses"] = plot_densenet_loss_curve(train_losses, val_losses)
+    ss["densenet_training_losses"] = plot_loss_curve(train_losses, val_losses)
 
     # 5b) plots training metrics and add to session state
     metrics = {
@@ -534,7 +544,7 @@ def plot_confusion_matrix(cm, class_names):
     return fig
 
 
-def plot_densenet_loss_curve(train_losses, test_losses):
+def plot_loss_curve(train_losses, test_losses):
     epochs = list(range(1, len(train_losses) + 1))
     fig = go.Figure()
     fig.add_scatter(

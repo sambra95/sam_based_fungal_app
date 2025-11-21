@@ -23,6 +23,9 @@ def _hex_for_plot_label(label: str) -> str:
 
 
 def plot_violin(df: pd.DataFrame, value_col: str):
+    """
+    Create a violin plot of `value_col` grouped by mask label.
+    Shows data points if `overlay_datapoints` is set in session state."""
     df["label"] = df["mask label"].replace("No label", None).fillna("Unlabelled")
     order = sorted(df["label"].unique(), key=lambda x: (x != "Unlabelled", str(x)))
 
@@ -104,6 +107,11 @@ def plot_violin(df: pd.DataFrame, value_col: str):
 
 
 def plot_bar(df: pd.DataFrame, value_col: str):
+    """
+    Create a bar plot of mean `value_col` grouped by mask label,
+    with error bars showing standard deviation. Shows data points if `overlay_datapoints` is set
+    in session state."""
+
     df["label"] = df["mask label"].replace("No label", None).fillna("Unlabelled")
     order = sorted(df["label"].unique(), key=lambda x: (x != "Unlabelled", str(x)))
     title_y = value_col.replace("_", " ").title()
@@ -117,6 +125,7 @@ def plot_bar(df: pd.DataFrame, value_col: str):
     means = g.mean().reindex(order).to_numpy()
     sds = g.std().reindex(order).fillna(0).to_numpy()
 
+    # main bar trace
     bar = go.Bar(
         x=xpos,
         y=means,
@@ -128,8 +137,10 @@ def plot_bar(df: pd.DataFrame, value_col: str):
         hovertemplate="<b>%{x}</b><br>" + title_y + ": %{y:.2f}<extra></extra>",
     )
 
+    # add jittered data points if requested
     traces = add_data_points_to_plot(bar, order, df, value_col, xpos)
 
+    # final layout
     fig = go.Figure(traces, layout=dict(barcornerradius=10))
     fig.update_layout(
         xaxis=dict(
@@ -154,6 +165,10 @@ def plot_bar(df: pd.DataFrame, value_col: str):
 
 
 def add_data_points_to_plot(plot, order, sub, value_col, xpos):
+    """
+    If `overlay_datapoints` is set in session state, add a scatter trace
+    with jittered points for each category to the given plotly bar plot."""
+
     # jittered points per category (optional)
     traces = [plot]
     for i, lab in enumerate(order):
@@ -169,6 +184,7 @@ def add_data_points_to_plot(plot, order, sub, value_col, xpos):
         rng = np.random.default_rng(42 + i)  # deterministic jitter per label
         xj = np.full(ys.shape, xpos[i], dtype=float) + rng.uniform(-0.20, 0.20, ys.size)
 
+        # scatter trace for data points
         traces.append(
             go.Scatter(
                 x=xj,
@@ -190,10 +206,17 @@ def add_data_points_to_plot(plot, order, sub, value_col, xpos):
 
 
 def _bresenham(r0, c0, r1, c1):
+    """
+    Bresenham's line algorithm between (r0, c0) and (r1, c1).
+    Returns an array of shape (N, 2) with the (row, col) coordinates of the pixels on the line.
+    """
+
+    # differences and steps
     dr, dc = abs(r1 - r0), abs(c1 - c0)
     sr = 1 if r0 < r1 else -1
     sc = 1 if c0 < c1 else -1
     r, c, pts = r0, c0, []
+
     if dc > dr:
         e = dc // 2
         while c != c1:
@@ -217,6 +240,10 @@ def _bresenham(r0, c0, r1, c1):
 
 
 def _boundary_pixels(mask):
+    """
+    Returns an array of shape (N, 2) with the (row, col) coordinates of the boundary pixels of the binary mask.
+    """
+
     if not mask.any():
         return np.empty((0, 2), np.int64)
     er = binary_erosion(mask, structure=np.ones((3, 3), bool), border_value=0)
@@ -279,10 +306,17 @@ def _longest_edge_to_edge(prop, max_points=1000, topk=8, rng_seed=0):
 
 
 def build_analysis_df():
+    """
+    Build a DataFrame with per-mask metrics for all images in session state.
+    Columns: image, mask #, mask label, mask area, mask perimeter, max edge-to-edge
+    """
+
     rows = []
+    # iterate through the image records
     for k in ordered_keys():
         rec = st.session_state.images[k]
         inst = rec.get("masks")
+        # skip invalid masks
         if not isinstance(inst, np.ndarray) or inst.ndim != 2 or not inst.any():
             continue
 
@@ -306,15 +340,22 @@ def build_analysis_df():
 
 
 def build_image_summary_df():
+    """
+    Build a DataFrame with per-image summary of cell counts by class.
+    Columns: image, total cells, unlabelled, <class 1>, <class 2>, etc
+    """
+
     rows = []
     all_classes = set()
 
+    # iterate through the image records
     for k in ordered_keys():
         rec = st.session_state.images[k]
         inst = rec.get("masks")
         if not isinstance(inst, np.ndarray) or inst.ndim != 2:
             continue
 
+        # get unique instance ids
         ids = np.unique(inst)
         ids = ids[ids != 0]
         total = len(ids)
@@ -323,6 +364,7 @@ def build_image_summary_df():
         counts = {}
         unlabelled = 0
 
+        # count per class
         for iid in ids:
             cls = labdict.get(int(iid))
             if cls is None or cls == "No label":
@@ -344,12 +386,12 @@ def build_image_summary_df():
         return pd.DataFrame()
 
     df = pd.DataFrame(rows).fillna(0)
-    # make sure integer counts
+    # convert counts to int
     for col in df.columns:
         if col != "image":
             df[col] = df[col].astype(int)
 
-    # ensure all class columns appear
+    # ensure all classes are present as columns
     for cls in sorted(all_classes):
         if cls not in df.columns:
             df[cls] = 0
@@ -361,6 +403,11 @@ def build_image_summary_df():
 
 
 def build_cell_metrics_zip(labels_selected):
+    """
+    Build a ZIP archive (bytes) containing cell metrics CSV and plots
+    for the selected labels (list of str). If empty, include all labels.
+    """
+
     df = build_analysis_df()
     if labels_selected:
         df = df[df["mask label"].isin(labels_selected)]
@@ -378,8 +425,10 @@ def build_cell_metrics_zip(labels_selected):
 
 def build_plots_zip(plot_paths_or_bytes) -> bytes:
     """
-    Accepts either list of file paths or list of (name, bytes).
+    Given a list of file paths (str or Path) or tuples of (filename, bytes),
+    build a ZIP archive (bytes) containing those files.
     """
+
     if not plot_paths_or_bytes:
         return b""
     buf = io.BytesIO()

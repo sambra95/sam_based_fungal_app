@@ -39,6 +39,10 @@ def create_image_mask_overlay_inner(
     palette_items,
     alpha,
 ):
+    """
+    Creates image-mask overlay for display, using bytes for caching.
+    """
+
     image = np.frombuffer(image_bytes, dtype=np.uint8).reshape(image_shape)
     mask = np.frombuffer(mask_bytes, dtype=np.uint16).reshape(mask_shape)
     classes_map = dict(classes_items)
@@ -48,15 +52,19 @@ def create_image_mask_overlay_inner(
 
 def create_image_mask_overlay(image, mask, classes_map, palette, alpha=0.5):
     """
+    Create an overlay of instance masks on an image using class colours.
     image_u8:  uint8 RGB image, shape (H, W, 3)
     mask: uint{8,16,32} label image, shape (H, W), 0=background, 1..N=instances
     classes_map: dict[int -> class_name]
     palette: dict[class_name -> (r,g,b) in 0..1]
     alpha: overlay opacity for filled region
     """
+
+    # validate inputs
     H, W = image.shape[:2]
     inst = np.asarray(mask)
 
+    # ensure label image is same size as image
     if inst.ndim != 2:
         raise ValueError("label_inst must be a 2D label image (H, W)")
     if inst.shape != (H, W):
@@ -65,21 +73,26 @@ def create_image_mask_overlay(image, mask, classes_map, palette, alpha=0.5):
             Image.fromarray(inst).resize((W, H), Image.NEAREST), dtype=inst.dtype
         )
 
+    # quick exit for empty masks
     if inst.size == 0 or not np.any(inst):
         return image
 
+    # create overlay
     out = image.astype(np.float32) / 255.0
 
     ids = np.unique(inst)
     ids = ids[ids != 0]  # skip background
 
+    # draw each instance
     for iid in ids:
+        # get class and colour
         cls = classes_map.get(int(iid), "__unlabeled__")
         color = np.array(palette.get(cls, palette["__unlabeled__"]), dtype=np.float32)
 
+        # mask for this instance
         mm = inst == iid
 
-        # fill
+        # filled region
         a = (mm.astype(np.float32) * alpha)[..., None]
         out = out * (1 - a) + color[None, None, :] * a
 
@@ -145,8 +158,9 @@ def _make_base_figure(bg_img, disp_w: int, disp_h: int, dragmode: str) -> go.Fig
     Create a Plotly figure with a background image and fixed pixel size.
     Used by both 'Draw box' and 'Draw mask' modes.
     """
-    fig = go.Figure()
 
+    # build figure with background image
+    fig = go.Figure()
     fig.add_layout_image(
         dict(
             source=bg_img,
@@ -161,6 +175,7 @@ def _make_base_figure(bg_img, disp_w: int, disp_h: int, dragmode: str) -> go.Fig
         )
     )
 
+    # set axes to image size and disable ticks
     fig.update_xaxes(visible=False, range=[0, disp_w], constrain="domain")
     fig.update_yaxes(
         visible=False,
@@ -168,7 +183,7 @@ def _make_base_figure(bg_img, disp_w: int, disp_h: int, dragmode: str) -> go.Fig
         scaleanchor="x",
         scaleratio=1,
     )
-
+    # set overall figure layout
     fig.update_layout(
         dragmode=dragmode,
         margin=dict(l=0, r=0, t=0, b=0),
@@ -187,6 +202,8 @@ def _handle_draw_mask_mode(
     key_ns: str,
 ) -> None:
     """Handle interactions when in 'Draw mask' mode."""
+
+    # background image for plotting
     bg = Image.fromarray(display_for_ui).convert("RGBA")
 
     # Track display shape per record so we can clear any stale display-space data
@@ -200,9 +217,11 @@ def _handle_draw_mask_mode(
     img_hash = hashlib.md5(bg.tobytes()).hexdigest()[:8]
     chart_key = f"{key_ns}_plotly_mask_{img_hash}"
 
+    # storage for drawn boxes in display space
     if "boxes" not in st.session_state:
         st.session_state["boxes"] = []  # if you still want raw polys
 
+    # callback to handle new lasso selections
     def update_boxes() -> None:
         event = st.session_state.get(chart_key)
         if event is None or event.selection is None:
@@ -244,6 +263,7 @@ def _handle_draw_mask_mode(
     # Build figure using the shared helper: same size as box mode
     fig = _make_base_figure(bg, disp_w, disp_h, dragmode="lasso")
 
+    # render the plotly chart with lasso selection
     st.plotly_chart(
         fig,
         key=chart_key,
@@ -266,6 +286,8 @@ def _handle_draw_box_mode(
     key_ns: str,
 ) -> None:
     """Handle interactions when in 'Draw box' mode."""
+
+    # background image for plotting
     bg = Image.fromarray(display_for_ui).convert("RGBA")
     img_hash = hashlib.md5(bg.tobytes()).hexdigest()[:8]
     chart_key = f"{key_ns}_plotly_{img_hash}"
@@ -281,6 +303,7 @@ def _handle_draw_box_mode(
 
 def _handle_remove_mask_mode(base_img: ImageArray, disp_w: int) -> None:
     """Handle interactions when in 'Remove mask' mode."""
+
     streamlit_image_coordinates(
         base_img,
         key="remove_click",
@@ -291,6 +314,7 @@ def _handle_remove_mask_mode(base_img: ImageArray, disp_w: int) -> None:
 
 def _handle_assign_class_mode(base_img: ImageArray, disp_w: int) -> None:
     """Handle interactions when in 'Assign class' mode."""
+
     streamlit_image_coordinates(
         base_img,
         key="class_click",
@@ -313,12 +337,17 @@ def polygon_xy_to_mask(xs, ys, height, width):
 
 
 def remove_clicked():
+    """Remove mask at clicked location."""
+
+    # check if there was a click
     if not st.session_state["remove_click"]:
         return
 
+    # get current record and display scale
     rec = get_current_rec()
     disp_w = st.session_state["disp_w"]
 
+    # map click to original image coords
     s = float(disp_w / rec["W"])
     xy = (
         int(round(st.session_state["remove_click"]["x"] / s)),
@@ -329,8 +358,10 @@ def remove_clicked():
     if xy == st.session_state["last_remove_xy"]:
         return
 
+    # store last click
     st.session_state["last_remove_xy"] = xy
 
+    # remove mask at clicked location
     x, y = xy
     m = rec.get("masks")
 
@@ -344,6 +375,7 @@ def remove_clicked():
     if gt.any():
         m[gt] -= 1
 
+    # update record
     rec["masks"] = m
     rec["labels"] = {
         (k - 1 if k > iid else k): v
@@ -354,11 +386,17 @@ def remove_clicked():
 
 
 def assign_clicked():
+    """Assign class to mask at clicked location."""
+
+    # check if there was a click
     if not st.session_state["class_click"]:
         return
 
+    # get current record and display scale
     rec = get_current_rec()
     disp_w = st.session_state["disp_w"]
+
+    # map click to original image coords
     s = float(disp_w / rec["W"])
     xy = (
         int(round(st.session_state["class_click"]["x"] / s)),
@@ -369,8 +407,10 @@ def assign_clicked():
     if xy == st.session_state["last_class_xy"]:
         return
 
+    # store last click
     st.session_state["last_class_xy"] = xy
 
+    # assign class to mask at clicked location
     x, y = xy
     m = rec.get("masks")
 
@@ -378,6 +418,7 @@ def assign_clicked():
     if iid == 0:
         return
 
+    # update label for this instance
     cur = st.session_state.get("side_current_class")
     labels = rec.setdefault("labels", {})
     if cur == "No label" or cur is None:
@@ -395,8 +436,9 @@ def assign_clicked():
 
 @st.fragment
 def render_cellpose_hyperparameters_fragment():
+    """Render Cellpose hyperparameters editing fragment."""
 
-    # Channels (two ints)
+    # Channel 1
     st.number_input(
         "Channel 1",
         value=st.session_state.get("cp_ch1"),
@@ -405,6 +447,8 @@ def render_cellpose_hyperparameters_fragment():
         key="w_cp_ch1",
     )
     st.session_state["cp_ch1"] = st.session_state.get("w_cp_ch1")
+
+    # Channel 2
     st.number_input(
         "Channel 2",
         value=st.session_state.get("cp_ch2"),
@@ -414,7 +458,7 @@ def render_cellpose_hyperparameters_fragment():
     )
     st.session_state["cp_ch2"] = st.session_state["w_cp_ch2"]
 
-    # diam_val = None
+    # Diameter
     diam_val = st.number_input(
         "Mean cell diameter (pixels)",
         min_value=0,
@@ -425,7 +469,7 @@ def render_cellpose_hyperparameters_fragment():
     )
     st.session_state["cp_diameter"] = diam_val
 
-    # Thresholds & size
+    # cellprob threshold
     cellprob = st.number_input(
         "Cell probability threshold",
         value=float(st.session_state.get("cp_cellprob_threshold")),
@@ -434,6 +478,8 @@ def render_cellpose_hyperparameters_fragment():
         help="Higher -> fewer cells.",
     )
     st.session_state["cp_cellprob_threshold"] = cellprob
+
+    # Flow threshold
     flowthr = st.number_input(
         "Flow threshold",
         value=float(st.session_state.get("cp_flow_threshold")),
@@ -442,6 +488,8 @@ def render_cellpose_hyperparameters_fragment():
         help="Lower -> more permissive flows.",
     )
     st.session_state["cp_flow_threshold"] = flowthr
+
+    # Minimum size threshold
     min_size = st.number_input(
         "Minimum cell size (pixels)",
         value=int(st.session_state.get("cp_min_size")),
@@ -452,6 +500,7 @@ def render_cellpose_hyperparameters_fragment():
     )
     st.session_state["cp_min_size"] = min_size
 
+    # Niter
     niter = st.number_input(
         "Niter",
         value=int(st.session_state["cp_niter"]),
@@ -464,9 +513,12 @@ def render_cellpose_hyperparameters_fragment():
 
 
 def render_box_tools_fragment(key_ns="side"):
-    rec = get_current_rec()
-    c1, c2 = st.columns([1, 1])
+    """Render SAM2 box drawing and segmentation fragment."""
 
+    # get current record
+    rec = get_current_rec()
+
+    c1, c2 = st.columns([1, 1])
     # button to set mode to draw boxes on the image
     if c1.button(
         "Draw box",
@@ -501,6 +553,9 @@ def render_box_tools_fragment(key_ns="side"):
 
 
 def render_mask_tools_fragment(key_ns="side"):
+    """Render manual mask drawing and removal button control fragment."""
+
+    # get current record
     rec = get_current_rec()
     row = st.container()
     c1, c2 = row.columns([1, 1])
@@ -564,6 +619,7 @@ def render_mask_tools_fragment(key_ns="side"):
 
 @st.fragment
 def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
+    """Render main image display and interaction fragment."""
 
     # get current record and verify that images are uploaded
     rec = get_current_rec()
