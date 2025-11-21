@@ -260,24 +260,19 @@ def classify_actions_fragment():
         "Batch classify cells",
         key="btn_batch_classify_cellpose",
         use_container_width=True,
-        on_click=batch_classify_and_refresh,
+        on_click=batch_classify,
         help="Batch classify all masks in all images with the loaded Densenet121 model.",
         disabled=st.session_state["densenet_model"] == None,
     )
 
 
-def batch_classify_and_refresh():
+def batch_classify():
     """classify masks in the all images"""
     ok = ordered_keys()
     if not ok:
         return
-    n = len(ok)
-    pb = st.progress(0.0, text="Starting…")
     for i, k in enumerate(ok, 1):
         classify_cells_with_densenet(st.session_state.images.get(k))
-        pb.progress(i / n, text=f"Classified {i}/{n}")
-    pb.empty()
-    st.rerun()
 
 
 # -----------------------------------------------------#
