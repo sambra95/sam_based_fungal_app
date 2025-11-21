@@ -585,8 +585,6 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
     reck = st.session_state.current_key
     rec_idx = ok.index(reck) if reck in ok else 0
 
-    slider_key = f"{key_ns}_jump"  # define once, reuse
-
     c1, c2 = st.columns([1, 4])
     with c1:
         st.toggle("Show masks", key="show_overlay", value=True)
@@ -601,7 +599,7 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
             1,
             len(ok),
             value=st.session_state["current_key"],
-            key=slider_key,
+            key="slider_jump",
             label_visibility="collapsed",
         )
 
