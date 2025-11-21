@@ -600,6 +600,7 @@ def render_display_and_interact_fragment(key_ns="edit", scale=1.5):
             "Image index",
             1,
             len(ok),
+            value=st.session_state["current_key"],
             key=slider_key,
             label_visibility="collapsed",
         )

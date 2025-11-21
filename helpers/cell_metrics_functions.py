@@ -4,7 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from helpers.state_ops import ordered_keys
-from skimage.measure import regionprops, find_contours
+from skimage.measure import regionprops
 from zipfile import ZipFile
 from pathlib import Path
 from zipfile import ZIP_DEFLATED
@@ -22,6 +22,7 @@ def _hex_for_plot_label(label: str) -> str:
     return color_hex_for(label)
 
 
+@st.cache_data(show_spinner="Loading violin plot...")
 def plot_violin(df: pd.DataFrame, value_col: str):
     df["label"] = df["mask label"].replace("No label", None).fillna("Unlabelled")
     order = sorted(df["label"].unique(), key=lambda x: (x != "Unlabelled", str(x)))
@@ -103,6 +104,7 @@ def plot_violin(df: pd.DataFrame, value_col: str):
     return f"{value_col.replace(' ', '_')}", fig
 
 
+@st.cache_data(show_spinner="Loading bar plot...")
 def plot_bar(df: pd.DataFrame, value_col: str):
     df["label"] = df["mask label"].replace("No label", None).fillna("Unlabelled")
     order = sorted(df["label"].unique(), key=lambda x: (x != "Unlabelled", str(x)))
