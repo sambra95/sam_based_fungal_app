@@ -11,7 +11,13 @@ from scipy import ndimage as ndi
 from helpers.state_ops import ordered_keys, get_current_rec, set_current_by_index
 from helpers.classifying_functions import classes_map_from_labels, create_colour_palette
 from helpers.cellpose_functions import normalize_image
-from helpers.sam2_functions import segment_with_sam2, _clear_boxes, box_draw_fragment
+from helpers.sam2_functions import (
+    segment_with_sam2,
+    _clear_boxes,
+    box_draw_fragment,
+    keep_largest_part,
+    integrate_new_mask,
+)
 
 ImageArray = np.ndarray  # (H, W, 3) uint8/float32
 MaskArray = np.ndarray  # (H, W) int / bool
@@ -296,60 +302,6 @@ def _handle_assign_class_mode(base_img: ImageArray, disp_w: int) -> None:
 # -----------------------------------------------------#
 # --------------- MASK HELPERS  --------------- #
 # -----------------------------------------------------#
-
-
-# masks can be cut when adding them to the existing array (new masks lose priority).
-# therefore, add mask, rextract to see if it is cut, if so, take it out and re-add the largest section
-def keep_largest_part(mask: np.ndarray) -> np.ndarray:
-    """Return only the largest connected component of a boolean mask."""
-    if not np.any(mask):
-        return np.zeros_like(mask, dtype=bool)
-    lab, n = ndi.label(mask)
-    if n == 1:
-        return mask.astype(bool)
-    sizes = np.bincount(lab.ravel())
-    sizes[0] = 0
-    return lab == sizes.argmax()
-
-
-def integrate_new_mask(original: np.ndarray, new_binary: np.ndarray):
-    """
-    Add a new mask into a label image.
-    - original: (H,W) int labels, 0=background, 1..N instances
-    - new_binary: (H,W) boolean mask
-    Returns (updated_label_image, new_id or None)
-    """
-    out = original
-    nb = new_binary.astype(bool)
-    if nb.ndim != 2 or not nb.any():
-        return out, None
-
-    # write only where background
-    write = (out == 0) & nb
-    if not write.any():
-        return out, None
-
-    max_id = int(out.max(initial=0))
-    new_id = max_id + 1
-
-    # upcast if needed
-    if new_id > np.iinfo(out.dtype).max:
-        out = out.astype(np.uint32)
-    else:
-        out = out.copy()
-
-    out[write] = new_id
-
-    # --- check contiguity: keep only the largest surviving component ---
-    mask_new = out == new_id
-    mask_new = keep_largest_part(mask_new)
-    if not mask_new.any():
-        return original, None  # nothing left after check
-
-    out[out == new_id] = 0  # clear possibly cut version
-    out[mask_new] = new_id  # reapply only largest part
-
-    return out, new_id
 
 
 def polygon_xy_to_mask(xs, ys, height, width):
