@@ -22,7 +22,6 @@ def _hex_for_plot_label(label: str) -> str:
     return color_hex_for(label)
 
 
-@st.cache_data(show_spinner="Loading violin plot...")
 def plot_violin(df: pd.DataFrame, value_col: str):
     df["label"] = df["mask label"].replace("No label", None).fillna("Unlabelled")
     order = sorted(df["label"].unique(), key=lambda x: (x != "Unlabelled", str(x)))
@@ -104,7 +103,6 @@ def plot_violin(df: pd.DataFrame, value_col: str):
     return f"{value_col.replace(' ', '_')}", fig
 
 
-@st.cache_data(show_spinner="Loading bar plot...")
 def plot_bar(df: pd.DataFrame, value_col: str):
     df["label"] = df["mask label"].replace("No label", None).fillna("Unlabelled")
     order = sorted(df["label"].unique(), key=lambda x: (x != "Unlabelled", str(x)))
