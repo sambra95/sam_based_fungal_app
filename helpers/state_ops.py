@@ -32,9 +32,11 @@ def ensure_global_state() -> None:
     ss.setdefault("cyto_to_train", "Cyto3")
     ss.setdefault("train_losses", [])
     ss.setdefault("test_losses", [])
+    ss.setdefault("cp_training_ch1", 0)
+    ss.setdefault("cp_training_ch2", 0)
 
     # cellpose inference
-    ss.setdefault("cellpose_channels", [0, 0])
+    # ss.setdefault("cellpose_channels", [0, 0])
     ss.setdefault("cp_ch1", 0)
     ss.setdefault("cp_ch2", 0)
     ss.setdefault("cp_min_size", 0)
@@ -49,7 +51,6 @@ def ensure_global_state() -> None:
     ss.setdefault("dn_batch_size", 32)
     ss.setdefault("dn_max_epoch", 100)
     ss.setdefault("dn_val_split", 0.2)
-    ss.setdefault("cp_compare_iou_png")
 
     # densenet
     ss.setdefault("densenet_model", None)

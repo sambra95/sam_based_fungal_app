@@ -226,6 +226,26 @@ def render_cellpose_options(key_ns="train_cellpose"):
         key="cellpose_batch_size",
     )
 
+    ss["cp_training_ch1"] = c3.number_input(
+        "Channel 1",
+        min_value=0,
+        max_value=4,
+        value=int(ss["cp_training_ch1"]),
+        step=1,
+        key="cp_training_ch1_input",
+        help="Set to 0 if single-channel images.",
+    )
+
+    ss["cp_training_ch2"] = c1.number_input(
+        "Channel 2",
+        min_value=0,
+        max_value=4,
+        value=int(ss["cp_training_ch2"]),
+        step=1,
+        key="cp_training_ch2_input",
+        help="Set to 0 if single-channel images.",
+    )
+
     # --- Hyperparameter tuning toggle + grid inputs ---
 
     col1, col2 = st.columns([1, 1])
@@ -287,7 +307,7 @@ def render_cellpose_train_fragment():
     lr = float(ss.get("cp_learning_rate"))
     wd = float(ss.get("cp_weight_decay"))
     nimg = int(ss.get("cp_batch_size"))
-    channels = ss.get("cellpose_channels")
+    channels = [ss.get("cp_training_ch1"), ss.get("cp_training_ch2")]
 
     # fine-tune the cellpose model
     with st.spinner("Fine-tuning Cellpose…"):
@@ -309,7 +329,7 @@ def render_cellpose_train_fragment():
             train_losses, test_losses
         )
 
-    # prepare a (possibly subsampled) evaluation set
+    # prepare a evaluation set
     masks = [rec["masks"] for rec in recs.values()]
     images = [rec["image"] for rec in recs.values()]
 
