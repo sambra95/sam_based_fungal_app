@@ -95,17 +95,52 @@ def render_densenet_summary_fragment():
     )
 
 
+def densenet_can_train(
+    patch_size: int, min_classes: int = 2, min_instances: int = 2
+) -> bool:
+    """
+    Return True if there are at least `min_classes` classes
+    with >= `min_instances` examples each.
+    """
+    _, y, classes = load_labeled_patches(patch_size=patch_size)
+
+    # counts[i] = number of samples for class i
+    counts = np.bincount(y, minlength=len(classes))
+
+    # how many classes have at least `min_instances` examples?
+    n_ok = int((counts >= min_instances).sum())
+    return n_ok >= min_classes
+
+
 def render_densenet_train_fragment():
     """Runs the full DenseNet training pipeline when the button is clicked."""
-    go = st.button("Fine tune Densenet121", use_container_width=True, type="primary")
-    if not go:
-        return
 
     # Read hyperparameter options from session
     input_size = int(ss.get("dn_input_size"))
     batch_size = int(ss.get("dn_batch_size"))
     epochs = int(ss.get("dn_max_epoch"))
     val_split = 0.2
+
+    # --- check if we have enough data to train ---
+    can_train = densenet_can_train(patch_size=input_size)
+
+    if not can_train:
+        st.warning(
+            "Need at least 2 classes with ≥ 2 labelled cells each "
+            "before fine-tuning DenseNet."
+        )
+
+    # Disable button if we don't have enough data
+    go = st.button(
+        "Fine tune Densenet121",
+        use_container_width=True,
+        type="primary",
+        disabled=not can_train,
+    )
+
+    # Don't proceed if button not clicked or training is not allowed
+    if (not go) or (not can_train):
+        return
 
     # fine tune the densenet model
     history, val_gen, classes = finetune_densenet(
@@ -292,51 +327,12 @@ def render_cellpose_options(key_ns="train_cellpose"):
     return True
 
 
-def densenet_can_train(
-    patch_size: int, min_classes: int = 2, min_instances: int = 2
-) -> bool:
-    """
-    Return True if there are at least `min_classes` classes
-    with >= `min_instances` examples each.
-    """
-    _, y, classes = load_labeled_patches(patch_size=patch_size)
-
-    # counts[i] = number of samples for class i
-    counts = np.bincount(y, minlength=len(classes))
-
-    # how many classes have at least `min_instances` examples?
-    n_ok = int((counts >= min_instances).sum())
-    return n_ok >= min_classes
-
-
 def render_cellpose_train_fragment():
     """Runs the full Cellpose fine-tuning pipeline when the button is clicked."""
 
-    # Read hyperparameter options from session
-    input_size = int(ss.get("dn_input_size"))
-    batch_size = int(ss.get("dn_batch_size"))
-    epochs = int(ss.get("dn_max_epoch"))
-    val_split = 0.2
-
-    # --- check if we have enough data to train ---
-    can_train = densenet_can_train(patch_size=input_size)
-
-    if not can_train:
-        st.warning(
-            "Need at least 2 classes with ≥ 2 labelled cells each "
-            "before fine-tuning DenseNet."
-        )
-
-    # Disable button if we don't have enough data
-    go = st.button(
-        "Fine tune Densenet121",
-        use_container_width=True,
-        type="primary",
-        disabled=not can_train,
-    )
-
-    # Don't proceed if button not clicked or training is not allowed
-    if (not go) or (not can_train):
+    # start fine-tuning when button clicked
+    go = st.button("Fine-tune Cellpose", use_container_width=True, type="primary")
+    if not go:
         return
 
     # gather training data

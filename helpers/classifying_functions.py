@@ -3,7 +3,10 @@ import numpy as np
 import streamlit as st
 
 from helpers.state_ops import ordered_keys, get_current_rec
-from helpers.densenet_functions import classify_cells_with_densenet
+from helpers.densenet_functions import (
+    classify_cells_with_densenet,
+    densenet_mapping_fragment,
+)
 
 ss = st.session_state
 
@@ -109,7 +112,7 @@ def rename_class_everywhere(old_name: str, new_name: str):
     # Track whether target already exists (merge)
     target_exists = new_name in all_classes
 
-    # --- Update labels in every image record ---
+    # Update labels in every image record)
     changed_labels = 0
     for _, rec in yield_all_image_records():
         lab = rec.get("labels")
@@ -120,7 +123,7 @@ def rename_class_everywhere(old_name: str, new_name: str):
                 lab[iid] = new_name
             changed_labels += len(to_update)
 
-    # --- Update class list (merge or rename) ---
+    # Update class list (merge or rename)
     if old_name in all_classes:
         all_classes = [c for c in all_classes if c != old_name]  # drop old
     if new_name not in all_classes:
@@ -218,6 +221,7 @@ def create_row(name: str, key: str, mode_ns: str = "side"):
     """
     Create a single class selection row with color chip, name, count, and select button.
     """
+    # table showing class info
     # icon | name | count | select |
     c1, c2, c3 = st.columns([1, 5, 5])
     c1.markdown(color_chip_md(color_hex_for(name)), unsafe_allow_html=True)
@@ -228,6 +232,7 @@ def create_row(name: str, key: str, mode_ns: str = "side"):
         st.session_state["pending_class"] = name
         st.session_state["interaction_mode"] = "Assign class"
 
+    # sets the current assignable class by clicking to the row's displayed class
     c3.button(
         "Assign label",
         key=f"{key}_select",
@@ -262,6 +267,7 @@ def classify_actions_fragment():
     # buttons to classify masks in current image or batch classify all images
     col1, col2 = st.columns(2)
     with col1:
+        # classify masks in the current image
         if st.button(
             "Classify cells",
             use_container_width=True,
@@ -271,6 +277,7 @@ def classify_actions_fragment():
             classify_cells_with_densenet(rec)
             st.rerun()
     with col2:
+        # batch classify masks in all images
         if st.button(
             "Batch classify cells",
             key="btn_batch_classify_cellpose",
@@ -280,6 +287,10 @@ def classify_actions_fragment():
         ):
             batch_classify()
             st.rerun()
+
+    # mapping fragment for assiging model outputs to classes
+    with st.popover("Map predictions to classes", use_container_width=True):
+        densenet_mapping_fragment()
 
 
 def batch_classify():
@@ -340,6 +351,8 @@ def class_manage_fragment(key_ns="side"):
 
     st.markdown("### Add or remove classes")
 
+    st.caption("Add new classes, delete existing classes, or rename classes.")
+
     # add new class by typing in the text box
     st.text_input(
         "",
@@ -372,7 +385,7 @@ def class_manage_fragment(key_ns="side"):
         st.text_input(
             "New label",
             key=f"{key_ns}_rename_to",
-            placeholder="Type the new class name and press Enter",
+            placeholder="Type new class name here",
             on_change=lambda: rename_class_from_input(
                 f"{key_ns}_rename_from", f"{key_ns}_rename_to"
             ),

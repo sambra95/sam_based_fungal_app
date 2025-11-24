@@ -51,9 +51,11 @@ def render_segment_sidebar(*, key_ns: str = "side"):
             ):
                 batch_segment_and_refresh()
 
-        with st.expander(
+        with st.popover(
             "Edit Cellpose Hyperparameters",
-            expanded=False,
+            disabled=st.session_state["cellpose_model_bytes"] == None,
+            use_container_width=True,
+            help="Adjust Cellpose hyperparameters for segmentation.",
         ):
             render_cellpose_hyperparameters_fragment()
 

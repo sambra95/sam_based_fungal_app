@@ -120,42 +120,126 @@ def generate_patches_with_ids(rec, patch_size=64):
 #  Model inference on patch
 # -------------------------------
 
+# somewhere near the top of classify_cells.py
+
+
+def get_densenet_num_classes(model) -> int | None:
+    """Infer number of output classes from the DenseNet model."""
+    if model is None:
+        return None
+    try:
+        # Keras-style model
+        return int(model.output_shape[-1])
+    except Exception:
+        return None
+
+
+def ensure_densenet_class_map() -> dict[int, str | None]:
+    """
+    Ensure we have a mapping for each model class index in session_state.
+
+    Returns a dict: {model_class_idx: label_name_or_None}
+    """
+    ss = st.session_state
+    model = ss.get("densenet_model")
+    n_classes = get_densenet_num_classes(model)
+    if n_classes is None:
+        return {}
+
+    class_map = ss.setdefault("densenet_class_map", {})
+
+    # Make sure there is a key for each model output index
+    for idx in range(n_classes):
+        class_map.setdefault(idx, None)  # None means "not mapped / No label"
+    ss["densenet_class_map"] = class_map
+    return class_map
+
+
+def densenet_mapping_fragment():
+    ss = st.session_state
+    model = ss.get("densenet_model")
+    if model is None:
+        return  # nothing to configure if model isn't loaded
+
+    n_classes = get_densenet_num_classes(model)
+    if n_classes is None:
+        st.warning("Could not determine number of classes from the DenseNet model.")
+        return
+
+    # Make sure global classes list exists
+    all_classes = ss.setdefault("all_classes", ["No label"])
+    class_map = ensure_densenet_class_map()
+
+    st.markdown("### Map model classes to labels")
+
+    st.caption(
+        "Add class labels using the 'Manage Classes' tab near the bottom of the control panel. Map each DenseNet prediction class (left) to one of your app labels (right). "
+        "Use 'No label' to leave predictions unlabeled."
+    )
+
+    for idx in range(n_classes):
+
+        current = class_map.get(idx)
+        options = all_classes  # existing labels, including 'No label'
+
+        # pick index in options (default to 'No label' if not mapped)
+        if current in options:
+            default_idx = options.index(current)
+        else:
+            default_idx = options.index("No label") if "No label" in options else 0
+
+        selected = st.selectbox(
+            label=f"Map model class {idx+1} to",
+            options=options,
+            index=default_idx,
+            key=f"densenet_map_{idx}",
+        )
+
+        class_map[idx] = selected
+
+    ss["densenet_class_map"] = class_map
+
 
 def classify_cells_with_densenet(rec: dict) -> None:
     """Classify segmented cell masks in `rec` using a DenseNet-121 model.
     Mutates `rec` and session_state, then triggers a rerun on success.
     """
-
+    ss = st.session_state
     model = ss.get("densenet_model")
     M = rec.get("masks")
 
     # exit if no masks for classification
-    if not isinstance(M, np.ndarray) or M.ndim != 2 or not np.any(M):
+    if model is None or not isinstance(M, np.ndarray) or M.ndim != 2 or not np.any(M):
         return
 
-    # extract noramlized cell patches. keep ids to that class can be added to the correct mask
+    # extract normalized cell patches and ids
     patches, keep_ids = generate_patches_with_ids(rec)
-
-    # normalize the patches
     patches = [normalize_image(patch) for patch in patches]
 
-    # classify the patches
     X = np.stack(patches, axis=0)
     preds = model.predict(X, verbose=0).argmax(axis=1)
 
-    # add class predictions to the record
-    all_classes = [c for c in ss.get("all_classes", []) if c != "No label"] or [
-        "class0",
-        "class1",
-    ]
+    # get mapping: model class index -> app label name
+    class_map = ensure_densenet_class_map()
+    all_classes = ss.setdefault("all_classes", ["No label"])
+
     labels = rec.setdefault("labels", {})
+
     for iid, cls_idx in zip(keep_ids, preds):
         idx = int(cls_idx)
-        name = all_classes[idx] if idx < len(all_classes) else str(idx)
-        labels[int(iid)] = name
-        if name and name != "No label" and name not in ss.get("all_classes", []):
-            ss.setdefault("all_classes", []).append(name)
 
+        # look up mapped label; default to "No label" if not mapped
+        name = class_map.get(idx)
+        if not name:
+            name = "No label"
+
+        labels[int(iid)] = name
+
+        # make sure new non-reserved labels are added to all_classes
+        if name and name != "No label" and name not in all_classes:
+            all_classes.append(name)
+
+    ss["all_classes"] = all_classes
     ss.images[ss.current_key] = rec
 
 
