@@ -5,15 +5,15 @@ Mycoscope is organized into a clear, step-by-step workflow that guides you from 
 Below is an overview of the full process:
 
 1. **Upload Page — Start with your data**  
-   Begin by uploading your microscopy images, along with optional masks and optional AI models (Cellpose for segmentation and DenseNet for classification).  
+   Begin by uploading your microscopy images, along with optional masks and optional AI models ([Cellpose](https://www.nature.com/articles/s41592-022-01663-4) for segmentation and [DenseNet](https://openaccess.thecvf.com/content_cvpr_2017/papers/Huang_Densely_Connected_Convolutional_CVPR_2017_paper.pdf) for classification).  
    This page establishes all inputs that downstream steps will use.
 
 2. **Segmentation & Classification Page — Create and refine annotations**  
-   View each image with its masks, generate new masks with Cellpose/SAM2, edit any segmentation errors, and classify cells manually or with an uploaded classifier.  
+   View each image with its masks, generate new masks with [Cellpose](https://www.nature.com/articles/s41592-022-01663-4)/[SAM2](https://ai.meta.com/sam2/), edit any segmentation errors, and classify cells manually or with an uploaded classifier.  
    This page is the central workspace where annotated datasets are produced.
 
 3. **Training Page — Build better models**  
-   Use the annotated datasets from the Segmentation & Classification page to train new Cellpose or DenseNet models.  
+   Use the annotated datasets from the Segmentation & Classification page to train new [Cellpose](https://www.nature.com/articles/s41592-022-01663-4) or [DenseNet](https://openaccess.thecvf.com/content_cvpr_2017/papers/Huang_Densely_Connected_Convolutional_CVPR_2017_paper.pdf) models.  
    Newly trained models can immediately be reused to improve segmentation and classification in future sessions.
 
 4. **Cell Analysis Page — Explore and compare cell properties**  
