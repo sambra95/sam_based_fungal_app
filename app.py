@@ -12,12 +12,37 @@ ensure_global_state()
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 configure_tf_cpu_only()
 
+st.html(
+    """
+<style>
+
+.stAppHeader { background-color: #E9F2FF; !important; }
+
+.stAppHeader span, .stAppHeader div {
+    font-weight: 600 !important;
+}
+
+.stAppHeader {
+    padding: 12px 20px !important;
+}
+
+.stAppHeader {
+    box-shadow: 0 2px 20px rgba(0,0,0,0.2) !important;
+}
+
+/* Increase text size inside the navbar/header */
+.stAppHeader span, .stAppHeader h1, .stAppHeader div {
+    font-size: 20px !important;
+}
+</style>
+"""
+)
 
 # ------------------ Define pages ------------------ #
 pages = [
     st.Page(
         "views/1_home_page.py",
-        title="Home",
+        title="Welcome to Mycoscope",
         icon="🏠",
         default=True,
     ),
@@ -28,17 +53,17 @@ pages = [
     ),
     st.Page(
         "views/3_Create_and_Edit_Masks.py",
-        title="Segment and Classify Cells",
+        title="Create and Edit Masks",
         icon="🎭",
     ),
     st.Page(
         "views/4_Fine_Tune_Models.py",
-        title="Train Segmentation and Classification Models",
+        title="Train Models",
         icon="🧠",
     ),
     st.Page(
         "views/5_Cell_Metrics.py",
-        title="Analyze Cell Groups",
+        title="Visualize Class Attributes",
         icon="📊",
     ),
 ]
