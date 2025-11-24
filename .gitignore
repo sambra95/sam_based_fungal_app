@@ -3,7 +3,7 @@ cellpose_training/
 models/
 
 # Ignore a specific file
-secret.txt
+.DS_Store
 
 # Ignore all .log files anywhere
 *.log

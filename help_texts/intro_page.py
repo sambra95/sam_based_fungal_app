@@ -1,3 +1,5 @@
+workflow_help = """### Mycoscope Workflow Overview"""
+
 welcome_help = """### Welcome to Mycoscope
 
 **Mycoscope** is an interactive platform for exploring, segmenting, and classifying microscopy images — powered by AI and designed to streamline your analysis workflow.

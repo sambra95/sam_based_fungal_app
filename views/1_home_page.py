@@ -9,10 +9,11 @@ TEXT_SIDECAREXT = (".md", ".txt")
 
 TEXT_BY_FILE: dict[str, str] = {
     "1_welcome_image.svg": intro_page.welcome_help,
-    "2_uploads.svg": intro_page.upload_help,
-    "3_masks.svg": intro_page.segmentclassify_help,
-    "4_train.svg": intro_page.train_help,
-    "5_analyze.svg": intro_page.analyze_help,
+    "2_workflow.svg": intro_page.workflow_help,
+    "3_uploads.svg": intro_page.upload_help,
+    "4_masks.svg": intro_page.segmentclassify_help,
+    "5_train.svg": intro_page.train_help,
+    "6_analyze.svg": intro_page.analyze_help,
 }
 
 
