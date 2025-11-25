@@ -315,7 +315,11 @@ def counts_for_rec(rec) -> dict:
 
 
 def build_masks_images_zip(
-    state_images, key_order, include_overlay: bool, include_counts: bool
+    state_images,
+    key_order,
+    include_overlay: bool,
+    include_counts: bool,
+    include_patches: bool,
 ) -> bytes:
     """Build a ZIP file with masks, images (optionally with overlays), and summary CSV.
     Return the ZIP file as bytes."""
@@ -392,6 +396,35 @@ def build_masks_images_zip(
             ibuf = io.BytesIO()
             tiff.imwrite(ibuf, img, photometric="rgb", compression="deflate")
             zf.writestr(f"images/{name}.tif", ibuf.getvalue())
+
+        # optionally write cell patches into zip
+        if include_patches:
+            for k in key_order:
+                rec = state_images[k]
+                name = Path(rec.get("name", f"{k}")).stem
+                mask = rec.get("masks")
+                labels = rec.get("labels", {})
+
+                unique_ids = [i for i in np.unique(mask) if i != 0]
+                for iid in unique_ids:
+                    cname = labels.get(iid)
+                    cname_str = (
+                        "No_label"
+                        if cname in (None, "", -1)
+                        else str(cname).replace(" ", "_")
+                    )
+                    # extract patch
+                    ys, xs = np.where(mask == iid)
+                    if ys.size == 0 or xs.size == 0:
+                        continue
+                    y1, y2 = ys.min(), ys.max() + 1
+                    x1, x2 = xs.min(), xs.max() + 1
+                    patch = rec["image"][y1:y2, x1:x2]
+                    # write patch to zip
+                    pbuf = io.BytesIO()
+                    tiff.imwrite(pbuf, patch, photometric="rgb", compression="deflate")
+                    patch_filename = f"patches/{name}_id{iid}_{cname_str}.tif"
+                    zf.writestr(patch_filename, pbuf.getvalue())
 
         # --- write summary.csv into the zip (image + per-class + total)
         df = pd.DataFrame(summary_rows, columns=["image"] + class_cols + ["total"])

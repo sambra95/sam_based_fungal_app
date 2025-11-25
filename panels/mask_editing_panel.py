@@ -122,19 +122,25 @@ def render_download_button():
     with st.container(border=True):
         with st.popover(label="Download options", use_container_width=True):
             c1, c2 = st.columns(2)
-            overlay = c1.checkbox(
+            include_overlay = c1.checkbox(
                 "Include colored mask overlays", True, key="dl_include_overlay"
             )
-            counts = c2.checkbox(
+            include_counts = c2.checkbox(
                 "Overlay per-image class counts", False, key="dl_include_counts"
             )
             c1.checkbox(
                 "Normalize downloaded images", False, key="dl_normalize_download"
             )
 
+            include_patches = c2.checkbox(
+                "Include cell patch images", False, key="dl_include_patches"
+            )
+
         # 🔹 Only build the dataset when the user actually clicks the button
         if st.button("Prepare dataset ZIP", use_container_width=True):
-            mz = build_masks_images_zip(images, ok, overlay, counts)
+            mz = build_masks_images_zip(
+                images, ok, include_overlay, include_counts, include_patches
+            )
             st.download_button(
                 "Download dataset (zip)",
                 mz,
