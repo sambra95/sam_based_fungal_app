@@ -674,7 +674,7 @@ def plot_densenet_metrics(metrics):
         ),
         name="metrics",
     )
-    fig.update_yaxes(range=[0, 1.0])
+    fig.update_yaxes(range=[0, 1.2])
     fig.update_layout(
         title="Validation metrics",
         plot_bgcolor="white",
