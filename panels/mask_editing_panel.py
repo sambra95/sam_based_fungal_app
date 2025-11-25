@@ -29,35 +29,40 @@ def render_segment_sidebar(*, key_ns: str = "side"):
     with st.container(border=True):
         st.subheader("Segmentation controls:")
 
-        col1, col2 = st.columns([1, 1])
-
-        with col1:
-
-            if st.button(
-                "Segment with Cellpose",
-                use_container_width=True,
-                key="segment_image",
-                help="Segment this image with Cellpose.",
-                disabled=st.session_state["cellpose_model_bytes"] == None,
-            ):
-                segment_current_and_refresh()
-        with col2:
-            if st.button(
-                "Batch segment with Cellpose",
-                use_container_width=True,
-                key="batch_segment_image",
-                help="Segment all uploaded images with Cellpose.",
-                disabled=st.session_state["cellpose_model_bytes"] == None,
-            ):
-                batch_segment_and_refresh()
-
         with st.popover(
-            "Edit Cellpose Hyperparameters",
+            "Segment cells with Cellpose",
             disabled=st.session_state["cellpose_model_bytes"] == None,
             use_container_width=True,
-            help="Adjust Cellpose hyperparameters for segmentation.",
+            help="Segment cells using the loaded Cellpose model.",
         ):
-            render_cellpose_hyperparameters_fragment()
+
+            col1, col2 = st.columns([1, 1])
+
+            with col1:
+
+                if st.button(
+                    "Generate masks",
+                    use_container_width=True,
+                    key="segment_image",
+                    help="Segment this image with Cellpose.",
+                    disabled=st.session_state["cellpose_model_bytes"] == None,
+                ):
+                    segment_current_and_refresh()
+            with col2:
+                if st.button(
+                    "Batch generate masks",
+                    use_container_width=True,
+                    key="batch_segment_image",
+                    help="Segment all uploaded images with Cellpose.",
+                    disabled=st.session_state["cellpose_model_bytes"] == None,
+                ):
+                    batch_segment_and_refresh()
+
+            st.caption("If needed, you can Cellpose hyperparameters before segmenting:")
+            with st.expander(
+                "Cellpose hyperparameters",
+            ):
+                render_cellpose_hyperparameters_fragment()
 
         with st.popover(
             "Segment cells with SAM2",
