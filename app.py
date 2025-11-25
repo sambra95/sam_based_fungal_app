@@ -55,7 +55,7 @@ pages = [
     ),
     st.Page(
         "views/3_Create_and_Edit_Masks.py",
-        title="Create and Edit Masks",
+        title="Annotate Images",
         icon="🎭",
     ),
     st.Page(

@@ -58,7 +58,9 @@ def render_segment_sidebar(*, key_ns: str = "side"):
                 ):
                     batch_segment_and_refresh()
 
-            st.caption("If needed, you can Cellpose hyperparameters before segmenting:")
+            st.caption(
+                "If needed, you can alter Cellpose hyperparameters before segmenting:"
+            )
             with st.expander(
                 "Cellpose hyperparameters",
             ):
@@ -80,18 +82,28 @@ def render_segment_sidebar(*, key_ns: str = "side"):
 
 
 def render_classify_sidebar(*, key_ns: str = "side"):
-    ok = ordered_keys()
-    if not ok:
-        st.warning("Upload an image in **Upload data** first.")
-        return
 
     with st.container(border=True):
-        st.markdown("### Classify cells with DenseNet")
-        classify_actions_fragment()
-        st.markdown("### Classify cells manually")
-        class_selection_fragment()
-        with st.popover(label="Manage Classes", use_container_width=True):
+        st.markdown("### Classification controls:")
+
+        with st.popover(label="Add or Remove Classes", use_container_width=True):
             class_manage_fragment(key_ns)  # add/delete/rename
+
+        class_selection_fragment()
+
+        with st.popover("Classify cells with Densenet", use_container_width=True):
+
+            # After the for-loop
+            if all(
+                label == "No label"
+                for label in st.session_state["densenet_class_map"].values()
+            ):
+                st.warning(
+                    "All model predictions are currently mapped to 'No label'. "
+                    "Please assign at least one label under 'Map predictions to classes' below."
+                )
+
+            classify_actions_fragment()
 
 
 def render_main(*, key_ns: str = "edit"):

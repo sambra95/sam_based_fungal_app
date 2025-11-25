@@ -172,11 +172,6 @@ def densenet_mapping_fragment():
 
     st.markdown("### Map model classes to labels")
 
-    st.caption(
-        "Add class labels using the 'Manage Classes' tab near the bottom of the control panel. Map each DenseNet prediction class (left) to one of your app labels (right). "
-        "Use 'No label' to leave predictions unlabeled."
-    )
-
     for idx in range(n_classes):
 
         current = class_map.get(idx)

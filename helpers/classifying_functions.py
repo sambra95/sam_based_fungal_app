@@ -230,7 +230,7 @@ def create_row(name: str, key: str, mode_ns: str = "side"):
     def _select():
         # pick this class and switch the main panel to Assign class mode
         st.session_state["pending_class"] = name
-        st.session_state["interaction_mode"] = "Assign class"
+        st.session_state["interaction_mode"] = "Click Assign"
 
     # sets the current assignable class by clicking to the row's displayed class
     c3.button(
@@ -289,7 +289,7 @@ def classify_actions_fragment():
             st.rerun()
 
     # mapping fragment for assiging model outputs to classes
-    with st.popover("Map predictions to classes", use_container_width=True):
+    with st.expander("Map predictions to classes"):
         densenet_mapping_fragment()
 
 
