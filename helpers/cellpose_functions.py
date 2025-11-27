@@ -175,6 +175,10 @@ def segment_with_cellpose(
 
     cell_model = get_cellpose_model()
 
+    # reset diameter to None for automatic estimation
+    if diameter == 0:
+        diameter = None
+
     masks_out, flows, styles = cell_model.eval(
         [im_in],
         channels=list(channels),
