@@ -644,7 +644,7 @@ def plot_loss_curve(train_losses, test_losses):
         marker=dict(color="#004280", size=6),
     )
     fig.update_layout(
-        title="DenseNet training/validation loss",
+        title="Training vs. Validation Loss",
         xaxis_title="Epoch",
         yaxis_title="Loss",
         plot_bgcolor="white",

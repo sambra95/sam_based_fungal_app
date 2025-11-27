@@ -7,7 +7,6 @@ import streamlit as st
 from zipfile import ZipFile
 from pathlib import Path
 from zipfile import ZIP_DEFLATED
-import streamlit as st
 from PIL import ImageDraw
 import pandas as pd
 from PIL import UnidentifiedImageError
@@ -375,15 +374,21 @@ def build_masks_images_zip(
                     txt = "\n".join(lines)
                     pil = Image.fromarray(img)
                     d = ImageDraw.Draw(pil)
-                    # measure text
-                    w, h = d.multiline_textbbox((0, 0), txt)[2:]
-                    img_w, img_h = pil.size
-                    # create new image with extra space for text
-                    new_img = Image.new("RGB", (img_w + w + 10, img_h), color="white")
-                    new_img.paste(pil, (0, 0))
-                    # draw text on right side
+
+                    # measure text height
+                    _, _, _, th = d.multiline_textbbox((0, 0), txt)
+
+                    # create space on top
+                    new_img = Image.new(
+                        "RGB", (pil.width, pil.height + th + 10), "white"
+                    )
+                    new_img.paste(pil, (0, th + 10))
+
+                    # centered text
                     d = ImageDraw.Draw(new_img)
-                    d.multiline_text((img_w + 5, 5), txt, fill=(0, 0, 0))
+                    tw = d.multiline_textbbox((0, 0), txt)[2]
+                    d.multiline_text(((new_img.width - tw) // 2, 5), txt, fill="black")
+
                     img = np.array(new_img)
 
             # capture a row for the CSV

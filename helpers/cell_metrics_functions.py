@@ -205,6 +205,103 @@ def add_data_points_to_plot(plot, order, sub, value_col, xpos):
     return traces
 
 
+def _safe_div(num, den):
+    """Return num / den, but np.nan if den is 0 or not finite."""
+    if den == 0 or not np.isfinite(den):
+        return float("nan")
+    return float(num / den)
+
+
+def mask_shape_metrics(prop, max_edge_to_edge=None):
+    """
+    Compute a set of shape metrics for a single skimage regionprops object.
+
+    Parameters
+    ----------
+    prop : skimage.measure._regionprops.RegionProperties
+        Region properties for a single labeled instance.
+    max_edge_to_edge : float or None
+        Optional precomputed longest internal chord length.
+        If provided, will be used for a normalized metric.
+
+    Returns
+    -------
+    dict
+        Keys are metric names (strings), values are floats (or np.nan).
+    """
+
+    area = float(prop.area)
+    perimeter = float(prop.perimeter)
+
+    # Basic axis lengths
+    major = float(getattr(prop, "major_axis_length", 0.0))
+    minor = float(getattr(prop, "minor_axis_length", 0.0))
+
+    # Classic circularity / roundness measure:
+    #   circularity = 4*pi*area / perimeter^2
+    # = 1 for a perfect circle, < 1 for other shapes.
+    circularity = _safe_div(4.0 * np.pi * area, perimeter**2)
+
+    # Alternative "roundness" using major axis:
+    #   roundness = 4*area / (pi * major_axis_length^2)
+    # again 1 for a perfect circle if major_axis_length is the diameter.
+    if major > 0:
+        roundness = _safe_div(4.0 * area, np.pi * major**2)
+    else:
+        roundness = float("nan")
+
+    # Aspect ratio (elongated shapes >> 1)
+    aspect_ratio = _safe_div(major, minor) if minor > 0 else float("nan")
+
+    # Elongation in [0, 1):
+    #   0 -> circle-like, ->1 very elongated
+    elongation = (
+        _safe_div(major - minor, major + minor) if (major + minor) > 0 else float("nan")
+    )
+
+    # Solidity = area / convex_area (1 for convex shapes)
+    solidity = float(getattr(prop, "solidity", float("nan")))
+
+    # Extent = area / bounding_box_area
+    extent = float(getattr(prop, "extent", float("nan")))
+
+    # Eccentricity of the ellipse that has the same second-moments
+    eccentricity = float(getattr(prop, "eccentricity", float("nan")))
+
+    # Compactness (inverse of circularity, higher = less compact)
+    compactness = _safe_div(perimeter**2, 4.0 * np.pi * area)
+
+    # Bounding box aspect ratio
+    minr, minc, maxr, maxc = prop.bbox
+    bbox_h = float(maxr - minr)
+    bbox_w = float(maxc - minc)
+    bbox_aspect = (
+        _safe_div(max(bbox_h, bbox_w), min(bbox_h, bbox_w))
+        if min(bbox_h, bbox_w) > 0
+        else float("nan")
+    )
+
+    # Normalized internal chord length (if you pass max_edge_to_edge)
+    # e.g. compare longest internal chord to major axis length
+    if max_edge_to_edge is not None and major > 0:
+        chord_over_major = _safe_div(max_edge_to_edge, major)
+    else:
+        chord_over_major = float("nan")
+
+    return {
+        "circularity": circularity,
+        "roundness": roundness,
+        "aspect ratio": aspect_ratio,
+        "elongation": elongation,
+        "solidity": solidity,
+        "extent": extent,
+        "eccentricity": eccentricity,
+        "compactness": compactness,
+        "bbox aspect ratio": bbox_aspect,
+        "chord / major axis": chord_over_major,
+    }
+
+
 def _bresenham(r0, c0, r1, c1):
     """
     Bresenham's line algorithm between (r0, c0) and (r1, c1).
@@ -308,7 +405,14 @@ def _longest_edge_to_edge(prop, max_points=1000, topk=8, rng_seed=0):
 def build_analysis_df():
     """
     Build a DataFrame with per-mask metrics for all images in session state.
-    Columns: image, mask #, mask label, mask area, mask perimeter, max edge-to-edge
+
+    Columns (existing):
+        image, mask #, mask label, mask area, mask perimeter, max edge-to-edge
+
+    New columns (from mask_shape_metrics):
+        circularity, roundness, aspect ratio, elongation,
+        solidity, extent, eccentricity, compactness,
+        bbox aspect ratio, chord / major axis
     """
 
     rows = []
@@ -324,18 +428,27 @@ def build_analysis_df():
         for prop in regionprops(inst):  # prop.label is the instance id
             iid = int(prop.label)
             cls = labdict.get(iid)
-            rows.append(
-                {
-                    "image": rec["name"],
-                    "mask #": iid,
-                    "mask label": ("Unlabelled" if cls in (None, "No label") else cls),
-                    "mask area": float(prop.area),
-                    "mask perimeter": float(prop.perimeter),  # or perimeter_crofton
-                    "max edge-to-edge": _longest_edge_to_edge(
-                        prop
-                    ),  # longest distance within the cell
-                }
-            )
+
+            # precompute your existing chord metric
+            max_ete = _longest_edge_to_edge(prop)
+
+            # compute shape metrics
+            shape_metrics = mask_shape_metrics(prop, max_edge_to_edge=max_ete)
+
+            row = {
+                "image": rec["name"],
+                "mask #": iid,
+                "mask label": ("Unlabelled" if cls in (None, "No label") else cls),
+                "mask area": float(prop.area),
+                "mask perimeter": float(prop.perimeter),  # or perimeter_crofton
+                "max edge-to-edge": max_ete,
+            }
+
+            # merge in the shape metrics
+            row.update(shape_metrics)
+
+            rows.append(row)
+
     return pd.DataFrame(rows)
 
 

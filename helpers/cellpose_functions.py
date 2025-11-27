@@ -346,6 +346,15 @@ def plot_pred_vs_true_counts(gt_counts, base_counts, title):
 # -----------------------------------------------------#
 
 
+@st.cache_resource
+def load_base_cellpose_model(base_model: str):
+    """Loads a base Cellpose model for fine-tuning."""
+    use_gpu = core.use_gpu()
+    init_model = None if base_model == "scratch" else base_model
+    cell_model = models.CellposeModel(gpu=use_gpu, model_type=init_model)
+    return cell_model
+
+
 def finetune_cellpose(
     recs: dict,
     base_model: str,
@@ -371,11 +380,10 @@ def finetune_cellpose(
         f"(+ {len(test_images)} validation images)."
     )
 
-    use_gpu = core.use_gpu()
     _ = io.logger_setup()
 
     init_model = None if base_model == "scratch" else base_model
-    cell_model = models.CellposeModel(gpu=use_gpu, model_type=init_model)
+    cell_model = load_base_cellpose_model(init_model)
     model_name = f"{base_model}_finetuned.pt"
 
     new_path, train_losses, test_losses = train.train_seg(

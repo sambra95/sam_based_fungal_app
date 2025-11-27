@@ -66,7 +66,7 @@ def render_plotting_options():
     st.multiselect(
         "Plot these metrics",
         options=metric_options,
-        default=default_metrics,
+        default="mask area",
         key="analysis_metrics",
     )
 
