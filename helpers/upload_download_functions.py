@@ -65,7 +65,7 @@ def load_demo_data():
     reset_global_state()
 
     # ---------- locate demo_data folder ----------
-    demo_root = Path(__file__).resolve().parent.parent / "demo_data"
+    demo_root = Path(__file__).resolve().parent() / "demo_data"
     images_dir = demo_root / "images"
     masks_dir = demo_root / "masks"
 
