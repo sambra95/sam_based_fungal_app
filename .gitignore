@@ -3,7 +3,6 @@ cellpose_training/
 models/
 
 # Ignore a specific file
-.DS_Store
 
 # Ignore all .log files anywhere
 *.log
@@ -18,16 +17,8 @@ __pycache__/
 
 # Ignore environment files
 
-helpers/.DS_Store
-panels/.DS_Store
-helpers/.DS_Store
 intro_images/~$intro_imags_ppt.pptx
-helpers/.DS_Store
-panels/.DS_Store
 intro_images/intro_imags_ppt.pptx
-panels/.DS_Store
 intro_images/ChatGPT Image Nov 4, 2025, 06_34_18 PM.png
-demo_data/classifier.keras
-demo_data/cellpose_model.pt
 helpers/max_internal_length.ipynb
 notebooks/max_internal_length.ipynb
