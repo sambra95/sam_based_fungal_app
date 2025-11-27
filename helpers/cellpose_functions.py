@@ -176,6 +176,7 @@ def segment_with_cellpose(
     cell_model = get_cellpose_model()
 
     # reset diameter to None for automatic estimation
+    # this is necessary be in the online version of the app only
     if diameter == 0:
         diameter = None
 
