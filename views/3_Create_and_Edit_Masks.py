@@ -20,11 +20,6 @@ with col1:
 
         st.info(f"**Image {rec_idx+1}/{len(ok)}:** {names[rec_idx]}")
 
-        ok = ordered_keys()
-        names = [st.session_state.images[k]["name"] for k in ok]
-        reck = st.session_state.current_key
-        rec_idx = ok.index(reck) if reck in ok else 0
-
         # --- Navigation buttons ---
         nav_col1, nav_col2, nav_col3 = st.columns([1, 4, 1])
 
