@@ -37,10 +37,6 @@ def render_densenet_options(key_ns="train_densenet"):
     """Light controls - lives outside fragments so changing options refreshes summary."""
     st.header("Fine-tune a DenseNet classifier")
 
-    if not ordered_keys():
-        st.info("Upload data and add labels in the other panels first.")
-        return False
-
     # show information about the training set
     render_densenet_summary_fragment()
 
@@ -199,10 +195,6 @@ def show_densenet_training_plots():
 
 def render_cellpose_options(key_ns="train_cellpose"):
     st.header("Fine-tune a Cellpose segmenter")
-
-    if not ordered_keys():
-        st.info("Upload data and label masks first.")
-        return False
 
     # --- show dataset stats ---
     def is_mask(m):
@@ -530,7 +522,7 @@ def render_cellpose_train_fragment():
 def show_cellpose_training_plots():
     """Render saved Cellpose plots from session state (if available)."""
 
-    # check for uploaded data
+    # check for previous fine-tuning data
     if "cellpose_training_losses" not in st.session_state:
         st.header("Cellpose Training Summary")
         st.info("No fine-tuning data to show.")
