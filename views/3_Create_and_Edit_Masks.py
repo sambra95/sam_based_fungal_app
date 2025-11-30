@@ -15,50 +15,63 @@ with col1:
 
         ok = ordered_keys()
         names = [st.session_state.images[k]["name"] for k in ok]
+
+        # --- Ensure we have a current key ---
+        if (
+            "current_key" not in st.session_state
+            or st.session_state.current_key not in ok
+        ):
+            st.session_state.current_key = ok[0]
+
         reck = st.session_state.current_key
-        rec_idx = ok.index(reck) if reck in ok else 0
+        rec_idx = ok.index(reck) if reck in ok else 0  # 0-based index
 
         st.info(f"**Image {rec_idx+1}/{len(ok)}:** {names[rec_idx]}")
 
-        # --- Navigation buttons ---
+        # --- Initialize slider state from current image (first run only) ---
+        if "slider_jump" not in st.session_state:
+            # slider is 1-based, rec_idx is 0-based
+            st.session_state.slider_jump = rec_idx + 1
+
+        # --- Helper: keep current_key in sync with slider value ---
+        def set_current_from_slider():
+            ok_local = ordered_keys()
+            # slider is 1..len(ok), convert to 0-based index, clamp to range
+            idx = max(0, min(len(ok_local) - 1, st.session_state.slider_jump - 1))
+            set_current_by_index(idx)
+
+        # --- Navigation buttons & slider ---
         nav_col1, nav_col2, nav_col3 = st.columns([1, 4, 1])
 
-        def go_to_prev():
-            set_current_by_index(rec_idx - 1)
-            st.rerun()
-
-        def go_to_next():
-            set_current_by_index(rec_idx + 1)
-            st.rerun()
-
         with nav_col1:
-
             if st.button("◀", use_container_width=True):
-                go_to_prev()
-
-        with nav_col2:
-            # # slider to move between images
-            # jump = st.slider(
-            #     "Image index",
-            #     1,
-            #     len(ok),
-            #     value=st.session_state["current_key"],
-            #     key="slider_jump",
-            #     label_visibility="collapsed",
-            # )
-            # if (jump - 1) != rec_idx:
-            #     set_current_by_index(jump - 1)
-            #     jump = st.session_state["current_key"]
-
-            st.caption("placeholder for image index slider")
+                # move slider one step back, then update current image
+                st.session_state.slider_jump = max(1, st.session_state.slider_jump - 1)
+                set_current_from_slider()
+                st.rerun()
 
         with nav_col3:
-
             if st.button("▶", use_container_width=True):
-                go_to_next()
+                # move slider one step forward, then update current image
+                st.session_state.slider_jump = min(
+                    len(ok), st.session_state.slider_jump + 1
+                )
+                set_current_from_slider()
+                st.rerun()
+
+        with nav_col2:
+            # slider drives the current image via on_change callback
+            st.slider(
+                "Image index",
+                1,
+                len(ok),
+                key="slider_jump",
+                label_visibility="collapsed",
+                on_change=set_current_from_slider,
+            )
 
         # --- Toggles for overlay and normalization ---
-        inner_col1, inner_col2 = st.columns([1, 3])
+        inner_col1, inner_col2 = st.columns([1, 2])
         with inner_col1:
             # toggle to show/hide masks overlay
             show_overlay_toggle = st.toggle(
