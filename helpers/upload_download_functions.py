@@ -261,20 +261,20 @@ def render_images_form():
     def is_mask(m):
         return isinstance(m, np.ndarray) and m.any()
 
-    # build rows in the uploaded images table
     rows = []
-    for k in ok:
+    for i, k in enumerate(ok, start=1):
         rec, m = ss.images[k], ss.images[k].get("masks")
         has = is_mask(m)
         n = int(len(np.unique(m)) - 1) if has else 0
         nl = sum(v is not None for v in rec.get("labels", {}).values())
         rows.append(
             {
-                "Image": rec.get("name", k),
-                "Mask Present": "✅" if has else "❌",
-                "Number of Masks": n,
-                "Labelled Masks": f"{nl}/{n}",
-                "Remove": False,
+                "No.": i,  # image id number
+                "Image": rec.get("name", k),  # image filename
+                "Mask Present": "✅" if has else "❌",  # whether mask is present
+                "Number of Masks": n,  # number of masks
+                "Labelled Masks": f"{nl}/{n}",  # number of labelled masks
+                "Remove": False,  # checkbox to remove image
             }
         )
 
