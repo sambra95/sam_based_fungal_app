@@ -13,9 +13,6 @@ from helpers.cell_metrics_functions import (
 @st.fragment
 def render_plotting_options():
 
-    if not ordered_keys():
-        return False
-
     # choose plot type
     plot_type = st.radio(
         "Plot type",
