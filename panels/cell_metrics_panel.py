@@ -7,7 +7,6 @@ from helpers.cell_metrics_functions import (
     plot_bar,
     build_cell_metrics_zip,
     show_shape_metric_reference,
-    show_shape_metric_illustrations,
 )
 
 
@@ -37,7 +36,6 @@ def render_plotting_options():
 
         with st.popover(label="Descriptor Information", use_container_width=True):
             show_shape_metric_reference()
-            show_shape_metric_illustrations()
 
     with col2:
         # build the analysis dataframe

@@ -300,301 +300,6 @@ def mask_shape_metrics(prop):
     }
 
 
-def show_shape_metric_reference():
-    st.subheader("Shape Descriptor Reference")
-
-    st.markdown(
-        """
-        Below is a quick reference for the shape metrics computed from each labeled region.
-        Use this as a guide when interpreting the measurements for your segmented cells.
-        All quantities are reported in pixel units unless you convert them using a known pixel size.
-        """
-    )
-
-    metrics = [
-        {
-            "Name": "area (A)",
-            "What it describes": "Size of the object in pixels.",
-            "How it is calculated": "Number of pixels inside the masked region.",
-        },
-        {
-            "Name": "perimeter (P)",
-            "What it describes": "Length of the object's boundary.",
-            "How it is calculated": "Length of the outer contour of the masked region.",
-        },
-        {
-            "Name": "major axis length",
-            "What it describes": "Longest axis of the best-fit ellipse. Larger values indicate a more elongated object.",
-            "How it is calculated": "Length of the major axis of the ellipse with the same second moments as the region.",
-        },
-        {
-            "Name": "minor axis length",
-            "What it describes": "Shortest axis of the best-fit ellipse.",
-            "How it is calculated": "Length of the minor axis of the ellipse with the same second moments as the region.",
-        },
-        {
-            "Name": "circularity",
-            "What it describes": "How close the shape is to a perfect circle. A value of 1 indicates a perfect circle; irregular or elongated shapes have values < 1.",
-            "How it is calculated": "4 · π · A / P²",
-        },
-        {
-            "Name": "roundness",
-            "What it describes": "Circle-likeness based on the major axis. Equals 1 for a perfect circle (if the major axis corresponds to the diameter). Lower values indicate elongation.",
-            "How it is calculated": "4 · A / (π · major_axis_length²)",
-        },
-        {
-            "Name": "aspect ratio",
-            "What it describes": "Ratio of major to minor axis length. Values ≥ 1; higher values indicate more elongation.",
-            "How it is calculated": "major_axis_length / minor_axis_length",
-        },
-        {
-            "Name": "elongation",
-            "What it describes": "Normalized elongation in the range [0, 1). Values near 0 indicate circle-like shapes; values approaching 1 indicate strong elongation.",
-            "How it is calculated": "(major_axis_length − minor_axis_length) / (major_axis_length + minor_axis_length)",
-        },
-        {
-            "Name": "solidity",
-            "What it describes": "How filled the object is relative to its convex hull. A value of 1 indicates a perfectly convex shape; lower values indicate concavities or irregular boundaries.",
-            "How it is calculated": "area / convex_area",
-        },
-        {
-            "Name": "extent",
-            "What it describes": "Fraction of the bounding box area occupied by the object. Values near 1 indicate that the object nearly fills its bounding box.",
-            "How it is calculated": "area / bounding_box_area",
-        },
-        {
-            "Name": "eccentricity",
-            "What it describes": "Eccentricity of the ellipse with matching second moments. 0 = circle; values approaching 1 = highly elongated.",
-            "How it is calculated": "√(1 − (b² / a²)), using semi-major axis a and semi-minor axis b.",
-        },
-        {
-            "Name": "compactness",
-            "What it describes": "Inverse of circularity; a measure of boundary irregularity. Equal to 1 for a perfect circle; > 1 for less compact or jagged shapes.",
-            "How it is calculated": "P² / (4 · π · A)",
-        },
-        {
-            "Name": "bbox aspect ratio",
-            "What it describes": "Elongation of the axis-aligned bounding box. Values ≥ 1; higher values indicate a more elongated bounding region.",
-            "How it is calculated": "max(bbox_height, bbox_width) / min(bbox_height, bbox_width)",
-        },
-    ]
-
-    df = pd.DataFrame(metrics).set_index("Name")
-
-    # Prevent wrapping in the first column ("Name")
-    st.markdown(
-        """
-        <style>
-            table td:first-child, table th:first-child {
-                white-space: nowrap;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.table(df)
-
-
-import matplotlib.pyplot as plt
-import numpy as np
-from matplotlib.patches import Circle, Ellipse, Polygon, Rectangle
-
-
-def show_shape_metric_illustrations():
-    st.subheader("Shape Descriptor Illustrations")
-    st.markdown(
-        """
-        These simple sketches illustrate how some of the shape descriptors behave
-        for different kinds of objects. The drawings are schematic, not to scale.
-        """
-    )
-
-    # --- Circularity & compactness ---
-    with st.expander("Circularity & compactness"):
-        fig, ax = plt.subplots(figsize=(3, 3))
-        ax.set_aspect("equal")
-
-        # Circle – high circularity, compact
-        circle = Circle((0.5, 0.5), 0.25, fill=False)
-        ax.add_patch(circle)
-        ax.text(
-            0.5,
-            0.15,
-            "Circle\n(circularity ≈ 1,\ncompactness ≈ 1)",
-            ha="center",
-            va="top",
-            fontsize=8,
-        )
-
-        # Irregular blob – lower circularity, less compact
-        blob = Polygon(
-            [
-                [1.1, 0.75],
-                [1.4, 0.6],
-                [1.35, 0.4],
-                [1.2, 0.3],
-                [1.0, 0.35],
-                [0.95, 0.55],
-            ],
-            closed=True,
-            fill=False,
-        )
-        ax.add_patch(blob)
-        ax.text(
-            1.25,
-            0.15,
-            "Irregular\n(circularity < 1,\ncompactness > 1)",
-            ha="center",
-            va="top",
-            fontsize=8,
-        )
-
-        ax.set_xlim(0, 1.7)
-        ax.set_ylim(0, 1.0)
-        ax.axis("off")
-
-        st.pyplot(fig)
-        st.caption(
-            "Circular shapes have circularity ≈ 1 and compactness ≈ 1. "
-            "Irregular shapes with longer perimeters for the same area have lower circularity and higher compactness."
-        )
-
-    # --- Aspect ratio, elongation & eccentricity ---
-    with st.expander("Aspect ratio, elongation & eccentricity"):
-        fig, ax = plt.subplots(figsize=(3, 3))
-        ax.set_aspect("equal")
-
-        # Nearly circular ellipse
-        ell1 = Ellipse((0.5, 0.5), 0.4, 0.35, fill=False)
-        ax.add_patch(ell1)
-        ax.text(
-            0.5,
-            0.15,
-            "Almost circle\n(aspect ratio ≈ 1,\nlow elongation,\nlow eccentricity)",
-            ha="center",
-            va="top",
-            fontsize=8,
-        )
-
-        # Elongated ellipse
-        ell2 = Ellipse((1.3, 0.5), 0.7, 0.2, fill=False)
-        ax.add_patch(ell2)
-        ax.text(
-            1.3,
-            0.15,
-            "Elongated\n(aspect ratio ≫ 1,\nhigher elongation,\nhigher eccentricity)",
-            ha="center",
-            va="top",
-            fontsize=8,
-        )
-
-        ax.set_xlim(0, 1.8)
-        ax.set_ylim(0, 1.0)
-        ax.axis("off")
-
-        st.pyplot(fig)
-        st.caption(
-            "Aspect ratio is major_axis_length / minor_axis_length. "
-            "Elongation and eccentricity both increase as the ellipse becomes more stretched out."
-        )
-
-    # --- Solidity ---
-    with st.expander("Solidity"):
-        fig, ax = plt.subplots(figsize=(3, 3))
-        ax.set_aspect("equal")
-
-        # Convex shape
-        convex = Polygon(
-            [[0.2, 0.2], [0.6, 0.25], [0.7, 0.6], [0.3, 0.8]], closed=True, fill=False
-        )
-        ax.add_patch(convex)
-        ax.text(
-            0.4,
-            0.1,
-            "Convex\n(solidity ≈ 1)",
-            ha="center",
-            va="top",
-            fontsize=8,
-        )
-
-        # Shape with indentation (concavity)
-        concave = Polygon(
-            [
-                [1.0, 0.2],
-                [1.4, 0.25],
-                [1.45, 0.5],
-                [1.2, 0.45],
-                [1.35, 0.8],
-                [1.0, 0.75],
-            ],
-            closed=True,
-            fill=False,
-        )
-        ax.add_patch(concave)
-        ax.text(
-            1.25,
-            0.1,
-            "Concave\n(solidity < 1)",
-            ha="center",
-            va="top",
-            fontsize=8,
-        )
-
-        ax.set_xlim(0, 1.8)
-        ax.set_ylim(0, 1.0)
-        ax.axis("off")
-
-        st.pyplot(fig)
-        st.caption(
-            "Solidity compares area to the area of the convex hull. "
-            "Deep indentations reduce solidity."
-        )
-
-    # --- Extent & bounding-box aspect ratio ---
-    with st.expander("Extent & bounding-box aspect ratio"):
-        fig, ax = plt.subplots(figsize=(3, 3))
-        ax.set_aspect("equal")
-
-        # Compact object filling box
-        bbox1 = Rectangle((0.1, 0.1), 0.6, 0.6, fill=False, linestyle="dotted")
-        ax.add_patch(bbox1)
-        obj1 = Rectangle((0.15, 0.15), 0.5, 0.5, fill=False)
-        ax.add_patch(obj1)
-        ax.text(
-            0.4,
-            0.05,
-            "High extent\n(object almost fills box)",
-            ha="center",
-            va="top",
-            fontsize=8,
-        )
-
-        # Thin object inside tall box
-        bbox2 = Rectangle((1.0, 0.1), 0.4, 0.8, fill=False, linestyle="dotted")
-        ax.add_patch(bbox2)
-        obj2 = Rectangle((1.05, 0.45), 0.3, 0.1, fill=False)
-        ax.add_patch(obj2)
-        ax.text(
-            1.2,
-            0.05,
-            "Low extent,\nbox aspect ratio ≫ 1",
-            ha="center",
-            va="top",
-            fontsize=8,
-        )
-
-        ax.set_xlim(0, 1.8)
-        ax.set_ylim(0, 1.0)
-        ax.axis("off")
-
-        st.pyplot(fig)
-        st.caption(
-            "Extent measures how much of the bounding box the object occupies. "
-            "Bounding-box aspect ratio reflects how elongated the axis-aligned box is."
-        )
-
-
 @st.cache_data(show_spinner="Building analysis DataFrame...")
 def build_analysis_df(records):
     """
@@ -679,3 +384,343 @@ def build_plots_zip(plot_paths_or_bytes) -> bytes:
                 # skip unknown
                 pass
     return buf.getvalue()
+
+
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.patches import Circle, Ellipse, Polygon, Rectangle
+
+
+def show_shape_metric_reference():
+    st.subheader("Shape Descriptor Reference")
+
+    st.markdown(
+        """
+        Below is a quick reference for the shape metrics computed from each labeled region.
+        Use this as a guide when interpreting the measurements for your segmented cells.
+
+        **Notation:**  
+        - \(A\): area (number of pixels in the object)  
+        - \(P\): perimeter (length of the object's boundary)  
+        - \(a, b\): semi-major and semi-minor axes of the best-fit ellipse  
+
+        All quantities are reported in pixel units.
+        """
+    )
+
+    # --- Textual definitions -------------------------------------------------
+    metrics = [
+        {
+            "Name": "area (A)",
+            "What it describes": "Size of the object in pixels.",
+            "How it is calculated": "Number of pixels inside the masked region.",
+        },
+        {
+            "Name": "perimeter (P)",
+            "What it describes": "Length of the object's boundary.",
+            "How it is calculated": "Length of the outer contour of the masked region.",
+        },
+        {
+            "Name": "major axis length",
+            "What it describes": (
+                "Longest axis of the best-fit ellipse. "
+                "Larger values (relative to object size) indicate a more elongated object."
+            ),
+            "How it is calculated": (
+                "Length of the major axis of the ellipse with the same second moments as the region."
+            ),
+        },
+        {
+            "Name": "minor axis length",
+            "What it describes": "Shortest axis of the best-fit ellipse.",
+            "How it is calculated": (
+                "Length of the minor axis of the ellipse with the same second moments as the region."
+            ),
+        },
+        {
+            "Name": "circularity",
+            "What it describes": (
+                "How close the shape is to a perfect circle. "
+                "Circularity = 1 for a perfect circle; irregular or elongated shapes have values < 1."
+            ),
+            "How it is calculated": "4 · π · A / P²",
+        },
+        {
+            "Name": "roundness",
+            "What it describes": (
+                "Circle-likeness based on the major axis. "
+                "Equals 1 for a perfect circle (if the major axis corresponds to the diameter). "
+                "Lower values indicate elongation."
+            ),
+            "How it is calculated": "4 · A / (π · major_axis_length²)",
+        },
+        {
+            "Name": "aspect ratio",
+            "What it describes": (
+                "Ratio of major to minor axis length. "
+                "Values ≥ 1; higher values indicate more elongation of the best-fit ellipse."
+            ),
+            "How it is calculated": "major_axis_length / minor_axis_length",
+        },
+        {
+            "Name": "elongation",
+            "What it describes": (
+                "Normalized elongation in the range [0, 1). "
+                "Values near 0 indicate circle-like shapes; values approaching 1 indicate strong elongation."
+            ),
+            "How it is calculated": (
+                "(major_axis_length − minor_axis_length) / "
+                "(major_axis_length + minor_axis_length)"
+            ),
+        },
+        {
+            "Name": "solidity",
+            "What it describes": (
+                "How filled the object is relative to its convex hull. "
+                "A value of 1 indicates a perfectly convex shape; lower values indicate concavities or "
+                "irregular boundaries."
+            ),
+            "How it is calculated": "area / convex_area",
+        },
+        {
+            "Name": "extent",
+            "What it describes": (
+                "Fraction of the bounding box area occupied by the object. "
+                "Values near 1 indicate that the object nearly fills its bounding box."
+            ),
+            "How it is calculated": "area / bounding_box_area",
+        },
+        {
+            "Name": "eccentricity",
+            "What it describes": (
+                "Eccentricity of the ellipse with matching second moments. "
+                "0 corresponds to a perfect circle; values approaching 1 correspond to highly elongated shapes."
+            ),
+            "How it is calculated": "√(1 − (b² / a²)), using semi-major axis a and semi-minor axis b.",
+        },
+        {
+            "Name": "compactness",
+            "What it describes": (
+                "Inverse of circularity; a measure of boundary irregularity. "
+                "Equal to 1 for a perfect circle; > 1 for less compact or more jagged shapes."
+            ),
+            "How it is calculated": "P² / (4 · π · A)",
+        },
+        {
+            "Name": "bbox aspect ratio",
+            "What it describes": (
+                "Elongation of the axis-aligned bounding box. "
+                "Values ≥ 1; higher values indicate a more elongated bounding region."
+            ),
+            "How it is calculated": "max(bbox_height, bbox_width) / min(bbox_height, bbox_width)",
+        },
+    ]
+
+    # --- Helper functions for illustrations ----------------------------------
+
+    def plot_circularity_compactness():
+        fig, ax = plt.subplots(figsize=(3, 3))
+        ax.set_aspect("equal")
+
+        # Circle – high circularity, compact
+        circle = Circle((0.5, 0.5), 0.25, fill=False)
+        ax.add_patch(circle)
+        ax.text(
+            0.5,
+            0.15,
+            "Circle\n(circularity ≈ 1,\ncompactness ≈ 1)",
+            ha="center",
+            va="top",
+            fontsize=8,
+        )
+
+        # Irregular blob – lower circularity, less compact
+        blob = Polygon(
+            [
+                [1.1, 0.75],
+                [1.4, 0.6],
+                [1.35, 0.4],
+                [1.2, 0.3],
+                [1.0, 0.35],
+                [0.95, 0.55],
+            ],
+            closed=True,
+            fill=False,
+        )
+        ax.add_patch(blob)
+        ax.text(
+            1.25,
+            0.15,
+            "Irregular\n(circularity < 1,\ncompactness > 1)",
+            ha="center",
+            va="top",
+            fontsize=8,
+        )
+
+        ax.set_xlim(0, 1.7)
+        ax.set_ylim(0, 1.0)
+        ax.axis("off")
+        return fig
+
+    def plot_aspect_elong_ecc():
+        fig, ax = plt.subplots(figsize=(3, 3))
+        ax.set_aspect("equal")
+
+        # Nearly circular ellipse
+        ell1 = Ellipse((0.5, 0.5), 0.4, 0.35, fill=False)
+        ax.add_patch(ell1)
+        ax.text(
+            0.5,
+            0.15,
+            "Almost circle\n(aspect ratio ≈ 1,\nlow elongation,\nlow eccentricity)",
+            ha="center",
+            va="top",
+            fontsize=8,
+        )
+
+        # Elongated ellipse
+        ell2 = Ellipse((1.3, 0.5), 0.7, 0.2, fill=False)
+        ax.add_patch(ell2)
+        ax.text(
+            1.3,
+            0.15,
+            "Elongated\n(aspect ratio ≫ 1,\nhigher elongation,\nhigher eccentricity)",
+            ha="center",
+            va="top",
+            fontsize=8,
+        )
+
+        ax.set_xlim(0, 1.8)
+        ax.set_ylim(0, 1.0)
+        ax.axis("off")
+        return fig
+
+    def plot_solidity():
+        fig, ax = plt.subplots(figsize=(3, 3))
+        ax.set_aspect("equal")
+
+        # Convex shape
+        convex = Polygon(
+            [[0.2, 0.2], [0.6, 0.25], [0.7, 0.6], [0.3, 0.8]],
+            closed=True,
+            fill=False,
+        )
+        ax.add_patch(convex)
+        ax.text(
+            0.4,
+            0.1,
+            "Convex\n(solidity ≈ 1)",
+            ha="center",
+            va="top",
+            fontsize=8,
+        )
+
+        # Shape with indentation (concavity)
+        concave = Polygon(
+            [
+                [1.0, 0.2],
+                [1.4, 0.25],
+                [1.45, 0.5],
+                [1.2, 0.45],
+                [1.35, 0.8],
+                [1.0, 0.75],
+            ],
+            closed=True,
+            fill=False,
+        )
+        ax.add_patch(concave)
+        ax.text(
+            1.25,
+            0.1,
+            "Concave\n(solidity < 1)",
+            ha="center",
+            va="top",
+            fontsize=8,
+        )
+
+        ax.set_xlim(0, 1.8)
+        ax.set_ylim(0, 1.0)
+        ax.axis("off")
+        return fig
+
+    def plot_extent_bbox_aspect():
+        fig, ax = plt.subplots(figsize=(3, 3))
+        ax.set_aspect("equal")
+
+        # Compact object filling box (high extent)
+        bbox1 = Rectangle((0.1, 0.1), 0.6, 0.6, fill=False, linestyle="dotted")
+        ax.add_patch(bbox1)
+        obj1 = Rectangle((0.15, 0.15), 0.5, 0.5, fill=False)
+        ax.add_patch(obj1)
+        ax.text(
+            0.4,
+            0.05,
+            "High extent\n(object almost fills box)",
+            ha="center",
+            va="top",
+            fontsize=8,
+        )
+
+        # Thin object inside tall box (low extent, high bbox aspect ratio)
+        bbox2 = Rectangle((1.0, 0.1), 0.4, 0.8, fill=False, linestyle="dotted")
+        ax.add_patch(bbox2)
+        obj2 = Rectangle((1.05, 0.45), 0.3, 0.1, fill=False)
+        ax.add_patch(obj2)
+        ax.text(
+            1.2,
+            0.05,
+            "Low extent,\nbox aspect ratio ≫ 1",
+            ha="center",
+            va="top",
+            fontsize=8,
+        )
+
+        ax.set_xlim(0, 1.8)
+        ax.set_ylim(0, 1.0)
+        ax.axis("off")
+        return fig
+
+    # --- Per-metric expanders ("popovers") -----------------------------------
+
+    for m in metrics:
+        with st.expander(m["Name"]):
+            st.markdown(
+                f"**What it describes:** {m['What it describes']}\n\n"
+                f"**How it is calculated:** {m['How it is calculated']}"
+            )
+
+            # Attach the appropriate illustration(s) where relevant
+            if m["Name"] in ["circularity", "compactness"]:
+                fig = plot_circularity_compactness()
+                st.pyplot(fig)
+                st.caption(
+                    "For the same area A, shapes with longer perimeters P have lower circularity "
+                    "and higher compactness."
+                )
+
+            if m["Name"] in ["aspect ratio", "elongation", "eccentricity"]:
+                fig = plot_aspect_elong_ecc()
+                st.pyplot(fig)
+                st.caption(
+                    "As the ellipse becomes more stretched (larger major_axis_length / minor_axis_length), "
+                    "aspect ratio, elongation, and eccentricity all increase."
+                )
+
+            if m["Name"] == "solidity":
+                fig = plot_solidity()
+                st.pyplot(fig)
+                st.caption(
+                    "Solidity = area / convex_area. A convex shape matches its convex hull (solidity ≈ 1). "
+                    "Indentations or holes reduce the area relative to the hull, lowering solidity."
+                )
+
+            if m["Name"] in ["extent", "bbox aspect ratio"]:
+                fig = plot_extent_bbox_aspect()
+                st.pyplot(fig)
+                st.caption(
+                    "Extent measures how much of the bounding box area the object occupies. "
+                    "The bounding-box aspect ratio compares its longer side to its shorter side; "
+                    "thin, elongated boxes have large aspect ratios."
+                )
