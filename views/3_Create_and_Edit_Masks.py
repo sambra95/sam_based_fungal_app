@@ -28,47 +28,52 @@ with col1:
 
         st.info(f"**Image {rec_idx+1}/{len(ok)}:** {names[rec_idx]}")
 
-        # --- Initialize slider state from current image (first run only) ---
-        if "slider_jump" not in st.session_state:
-            # slider is 1-based, rec_idx is 0-based
-            st.session_state.slider_jump = rec_idx + 1
+        # removed slider and buttons if only one image to prevent crash
+        if len(ok) != 1:
 
-        # --- Helper: keep current_key in sync with slider value ---
-        def set_current_from_slider():
-            ok_local = ordered_keys()
-            # slider is 1..len(ok), convert to 0-based index, clamp to range
-            idx = max(0, min(len(ok_local) - 1, st.session_state.slider_jump - 1))
-            set_current_by_index(idx)
+            # --- Initialize slider state from current image (first run only) ---
+            if "slider_jump" not in st.session_state:
+                # slider is 1-based, rec_idx is 0-based
+                st.session_state.slider_jump = rec_idx + 1
 
-        # --- Navigation buttons & slider ---
-        nav_col1, nav_col2, nav_col3 = st.columns([1, 4, 1])
+            # --- Helper: keep current_key in sync with slider value ---
+            def set_current_from_slider():
+                ok_local = ordered_keys()
+                # slider is 1..len(ok), convert to 0-based index, clamp to range
+                idx = max(0, min(len(ok_local) - 1, st.session_state.slider_jump - 1))
+                set_current_by_index(idx)
 
-        with nav_col1:
-            if st.button("◀", use_container_width=True):
-                # move slider one step back, then update current image
-                st.session_state.slider_jump = max(1, st.session_state.slider_jump - 1)
-                set_current_from_slider()
-                st.rerun()
+            # --- Navigation buttons & slider ---
+            nav_col1, nav_col2, nav_col3 = st.columns([1, 4, 1])
 
-        with nav_col3:
-            if st.button("▶", use_container_width=True):
-                # move slider one step forward, then update current image
-                st.session_state.slider_jump = min(
-                    len(ok), st.session_state.slider_jump + 1
+            with nav_col1:
+                if st.button("◀", use_container_width=True):
+                    # move slider one step back, then update current image
+                    st.session_state.slider_jump = max(
+                        1, st.session_state.slider_jump - 1
+                    )
+                    set_current_from_slider()
+                    st.rerun()
+
+            with nav_col3:
+                if st.button("▶", use_container_width=True):
+                    # move slider one step forward, then update current image
+                    st.session_state.slider_jump = min(
+                        len(ok), st.session_state.slider_jump + 1
+                    )
+                    set_current_from_slider()
+                    st.rerun()
+
+            with nav_col2:
+                # slider drives the current image via on_change callback
+                st.slider(
+                    "Image index",
+                    1,
+                    len(ok),
+                    key="slider_jump",
+                    label_visibility="collapsed",
+                    on_change=set_current_from_slider,
                 )
-                set_current_from_slider()
-                st.rerun()
-
-        with nav_col2:
-            # slider drives the current image via on_change callback
-            st.slider(
-                "Image index",
-                1,
-                len(ok),
-                key="slider_jump",
-                label_visibility="collapsed",
-                on_change=set_current_from_slider,
-            )
 
         # --- Toggles for overlay and normalization ---
         inner_col1, inner_col2 = st.columns([1, 2])
