@@ -29,6 +29,8 @@ def render_segment_sidebar(*, key_ns: str = "side"):
     with st.container(border=True):
         st.subheader("Segmentation controls:")
 
+        render_mask_tools_fragment(key_ns)
+
         with st.popover(
             "Segment cells with Cellpose",
             disabled=st.session_state["cellpose_model_bytes"] == None,
@@ -72,13 +74,6 @@ def render_segment_sidebar(*, key_ns: str = "side"):
             help="Draw boxes and click segment to use SAM2 to segment individual cells.",
         ):
             render_box_tools_fragment(key_ns)
-
-        with st.popover(
-            "Manually add & remove masks",
-            use_container_width=True,
-            help="Manually add and remove cell masks.",
-        ):
-            render_mask_tools_fragment(key_ns)
 
 
 def render_classify_sidebar(*, key_ns: str = "side"):
