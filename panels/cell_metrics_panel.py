@@ -1,75 +1,85 @@
 # panels/cell_metrics_panel.py
 import streamlit as st
 
-from helpers.upload_download_functions import ordered_keys
 from helpers.cell_metrics_functions import (
     build_analysis_df,
     plot_violin,
     plot_bar,
     build_cell_metrics_zip,
+    show_shape_metric_reference,
+    show_shape_metric_illustrations,
 )
 
 
 @st.fragment
 def render_plotting_options():
+    col1, col2 = st.columns([1, 5])
+    with col1:
+        # choose plot type
+        plot_type = st.radio(
+            "Plot type",
+            ["Violin", "Bar"],
+            horizontal=True,
+            index=(
+                0
+                if st.session_state.get("analysis_plot_type", "Violin") == "Violin"
+                else 1
+            ),
+        )
+        st.session_state.analysis_plot_type = plot_type
 
-    # choose plot type
-    plot_type = st.radio(
-        "Plot type",
-        ["Violin", "Bar"],
-        horizontal=True,
-        index=(
-            0 if st.session_state.get("analysis_plot_type", "Violin") == "Violin" else 1
-        ),
-    )
-    st.session_state.analysis_plot_type = plot_type
+        # toggle overlay of datapoints in the plots
+        overlay_points = st.toggle(
+            "Overlay individual datapoints",
+            value=st.session_state.get("overlay_datapoints", False),
+            key="overlay_datapoints",
+        )
 
-    # toggle overlay of datapoints in the plots
-    overlay_points = st.toggle(
-        "Overlay individual datapoints",
-        value=st.session_state.get("overlay_datapoints", False),
-        key="overlay_datapoints",
-    )
+        with st.popover(label="Descriptor Information", use_container_width=True):
+            show_shape_metric_reference()
+            show_shape_metric_illustrations()
 
-    # build the analysis dataframe
-    df = build_analysis_df()
-    if df.empty:
-        st.info("No masks found.")
-        return
+    with col2:
+        # build the analysis dataframe
+        df = build_analysis_df(st.session_state["images"])
+        if df.empty:
+            st.info("No masks found.")
+            return
 
-    # Labels multiselect (single instance)
-    label_options = sorted(
-        df["mask label"].unique(), key=lambda x: (x != "Unlabelled", str(x))
-    )
-    default_labels = st.session_state.get("analysis_labels", label_options)
-    default_labels = [
-        label for label in default_labels if label in label_options
-    ] or label_options
-    st.multiselect(
-        "Include these classes in the plots",
-        options=label_options,
-        default=default_labels,
-        key="analysis_labels",
-    )
+        # Labels multiselect (single instance)
+        label_options = sorted(
+            df["mask label"].unique(), key=lambda x: (x != "Unlabelled", str(x))
+        )
+        default_labels = st.session_state.get("analysis_labels", label_options)
+        default_labels = [
+            label for label in default_labels if label in label_options
+        ] or label_options
+        st.multiselect(
+            "Include these classes in the plots",
+            options=label_options,
+            default=default_labels,
+            key="analysis_labels",
+        )
 
-    # Metrics multiselect (single instance)
-    metric_options = [
-        col for col in df.columns if col not in ["image", "mask #", "mask label"]
-    ]
-    default_metrics = st.session_state.get("analysis_metrics", metric_options)
-    default_metrics = [
-        m for m in default_metrics if m in metric_options
-    ] or metric_options
-    st.multiselect(
-        "Plot these metrics",
-        options=metric_options,
-        default="mask area",
-        key="analysis_metrics",
-    )
+        # Metrics multiselect (single instance)
+        metric_options = [
+            col for col in df.columns if col not in ["image", "mask #", "mask label"]
+        ]
+        default_metrics = st.session_state.get("analysis_metrics", metric_options)
+        default_metrics = [
+            m for m in default_metrics if m in metric_options
+        ] or metric_options
+
+        st.multiselect(
+            "Plot these descriptors",
+            options=metric_options,
+            default="area",
+            key="analysis_metrics",
+        )
 
     # render the download button for cell metrics
     st.download_button(
-        "Download cell metrics (.zip)",
+        "Download table of cell descriptors",
         data=build_cell_metrics_zip(
             tuple(st.session_state.get("analysis_labels") or ())
         ),
@@ -77,29 +87,25 @@ def render_plotting_options():
         mime="application/zip",
         use_container_width=True,
         key="dl_cell_metrics_zip",
+        type="primary",
     )
 
 
 def render_plotting_main():
 
-    # check for uploaded data
-    if not ordered_keys():
-        st.info("Upload data and label masks first.")
-        return False
-
     # build dataframes
-    df = build_analysis_df()
+    df = build_analysis_df(st.session_state["images"])
 
     df_filt = df.copy()
     df_filt["mask label"] = (
         df_filt["mask label"].replace("Remove label", None).fillna("Unlabelled")
     )
 
-    # ... after building df and df_filt ...
+    # filter by selected labels
     labels_to_plot = st.session_state.get("analysis_labels", None)
     metrics = st.session_state.get("analysis_metrics") or [
-        "mask area",
-        "mask perimeter",
+        "area",
+        "perimeter",
     ]
 
     if labels_to_plot:

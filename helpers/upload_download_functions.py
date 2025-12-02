@@ -319,6 +319,7 @@ def build_masks_images_zip(
     include_overlay: bool,
     include_counts: bool,
     include_patches: bool,
+    include_summary: bool,
 ) -> bytes:
     """Build a ZIP file with masks, images (optionally with overlays), and summary CSV.
     Return the ZIP file as bytes."""
@@ -431,10 +432,12 @@ def build_masks_images_zip(
                     patch_filename = f"patches/{name}_id{iid}_{cname_str}.tif"
                     zf.writestr(patch_filename, pbuf.getvalue())
 
-        # --- write summary.csv into the zip (image + per-class + total)
-        df = pd.DataFrame(summary_rows, columns=["image"] + class_cols + ["total"])
-        csv_buf = io.StringIO()
-        df.to_csv(csv_buf, index=False)
-        zf.writestr("summary.csv", csv_buf.getvalue())
+        if include_summary:
+
+            # --- write summary.csv into the zip (image + per-class + total)
+            df = pd.DataFrame(summary_rows, columns=["image"] + class_cols + ["total"])
+            csv_buf = io.StringIO()
+            df.to_csv(csv_buf, index=False)
+            zf.writestr("cell_counts_per_image.csv", csv_buf.getvalue())
 
     return buf.getvalue()

@@ -9,7 +9,6 @@ from zipfile import ZipFile
 from pathlib import Path
 from zipfile import ZIP_DEFLATED
 from helpers.classifying_functions import color_hex_for
-from scipy.ndimage import binary_erosion
 
 
 def hex_for_plot_label(label: str) -> str:
@@ -215,7 +214,7 @@ def safe_div(num, den):
     return float(num / den)
 
 
-def mask_shape_metrics(prop, max_edge_to_edge=None):
+def mask_shape_metrics(prop):
     """
     Compute a set of shape metrics for a single skimage regionprops object.
 
@@ -284,14 +283,11 @@ def mask_shape_metrics(prop, max_edge_to_edge=None):
         else float("nan")
     )
 
-    # Normalized internal chord length (if you pass max_edge_to_edge)
-    # e.g. compare longest internal chord to major axis length
-    if max_edge_to_edge is not None and major > 0:
-        chord_over_major = safe_div(max_edge_to_edge, major)
-    else:
-        chord_over_major = float("nan")
-
     return {
+        "area": area,
+        "perimeter": perimeter,
+        "major axis length": major,
+        "minor axis length": minor,
         "circularity": circularity,
         "roundness": roundness,
         "aspect ratio": aspect_ratio,
@@ -301,111 +297,306 @@ def mask_shape_metrics(prop, max_edge_to_edge=None):
         "eccentricity": eccentricity,
         "compactness": compactness,
         "bbox aspect ratio": bbox_aspect,
-        "chord / major axis": chord_over_major,
     }
 
 
-def bresenham(r0, c0, r1, c1):
-    """
-    Bresenham's line algorithm between (r0, c0) and (r1, c1).
-    Returns an array of shape (N, 2) with the (row, col) coordinates of the pixels on the line.
-    """
+def show_shape_metric_reference():
+    st.subheader("Shape Descriptor Reference")
 
-    # differences and steps
-    dr, dc = abs(r1 - r0), abs(c1 - c0)
-    sr = 1 if r0 < r1 else -1
-    sc = 1 if c0 < c1 else -1
-    r, c, pts = r0, c0, []
+    st.markdown(
+        """
+        Below is a quick reference for the shape metrics computed from each labeled region.
+        Use this as a guide when interpreting the measurements for your segmented cells.
+        All quantities are reported in pixel units unless you convert them using a known pixel size.
+        """
+    )
 
-    if dc > dr:
-        e = dc // 2
-        while c != c1:
-            pts.append((r, c))
-            e -= dr
-            if e < 0:
-                r += sr
-                e += dc
-            c += sc
-    else:
-        e = dr // 2
-        while r != r1:
-            pts.append((r, c))
-            e -= dc
-            if e < 0:
-                c += sc
-                e += dr
-            r += sr
-    pts.append((r1, c1))
-    return np.asarray(pts, np.int64)
+    metrics = [
+        {
+            "Name": "area (A)",
+            "What it describes": "Size of the object in pixels.",
+            "How it is calculated": "Number of pixels inside the masked region.",
+        },
+        {
+            "Name": "perimeter (P)",
+            "What it describes": "Length of the object's boundary.",
+            "How it is calculated": "Length of the outer contour of the masked region.",
+        },
+        {
+            "Name": "major axis length",
+            "What it describes": "Longest axis of the best-fit ellipse. Larger values indicate a more elongated object.",
+            "How it is calculated": "Length of the major axis of the ellipse with the same second moments as the region.",
+        },
+        {
+            "Name": "minor axis length",
+            "What it describes": "Shortest axis of the best-fit ellipse.",
+            "How it is calculated": "Length of the minor axis of the ellipse with the same second moments as the region.",
+        },
+        {
+            "Name": "circularity",
+            "What it describes": "How close the shape is to a perfect circle. A value of 1 indicates a perfect circle; irregular or elongated shapes have values < 1.",
+            "How it is calculated": "4 · π · A / P²",
+        },
+        {
+            "Name": "roundness",
+            "What it describes": "Circle-likeness based on the major axis. Equals 1 for a perfect circle (if the major axis corresponds to the diameter). Lower values indicate elongation.",
+            "How it is calculated": "4 · A / (π · major_axis_length²)",
+        },
+        {
+            "Name": "aspect ratio",
+            "What it describes": "Ratio of major to minor axis length. Values ≥ 1; higher values indicate more elongation.",
+            "How it is calculated": "major_axis_length / minor_axis_length",
+        },
+        {
+            "Name": "elongation",
+            "What it describes": "Normalized elongation in the range [0, 1). Values near 0 indicate circle-like shapes; values approaching 1 indicate strong elongation.",
+            "How it is calculated": "(major_axis_length − minor_axis_length) / (major_axis_length + minor_axis_length)",
+        },
+        {
+            "Name": "solidity",
+            "What it describes": "How filled the object is relative to its convex hull. A value of 1 indicates a perfectly convex shape; lower values indicate concavities or irregular boundaries.",
+            "How it is calculated": "area / convex_area",
+        },
+        {
+            "Name": "extent",
+            "What it describes": "Fraction of the bounding box area occupied by the object. Values near 1 indicate that the object nearly fills its bounding box.",
+            "How it is calculated": "area / bounding_box_area",
+        },
+        {
+            "Name": "eccentricity",
+            "What it describes": "Eccentricity of the ellipse with matching second moments. 0 = circle; values approaching 1 = highly elongated.",
+            "How it is calculated": "√(1 − (b² / a²)), using semi-major axis a and semi-minor axis b.",
+        },
+        {
+            "Name": "compactness",
+            "What it describes": "Inverse of circularity; a measure of boundary irregularity. Equal to 1 for a perfect circle; > 1 for less compact or jagged shapes.",
+            "How it is calculated": "P² / (4 · π · A)",
+        },
+        {
+            "Name": "bbox aspect ratio",
+            "What it describes": "Elongation of the axis-aligned bounding box. Values ≥ 1; higher values indicate a more elongated bounding region.",
+            "How it is calculated": "max(bbox_height, bbox_width) / min(bbox_height, bbox_width)",
+        },
+    ]
 
+    df = pd.DataFrame(metrics).set_index("Name")
 
-def boundary_pixels(mask):
-    """
-    Returns an array of shape (N, 2) with the (row, col) coordinates of the boundary pixels of the binary mask.
-    """
+    # Prevent wrapping in the first column ("Name")
+    st.markdown(
+        """
+        <style>
+            table td:first-child, table th:first-child {
+                white-space: nowrap;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    if not mask.any():
-        return np.empty((0, 2), np.int64)
-    er = binary_erosion(mask, structure=np.ones((3, 3), bool), border_value=0)
-    return np.argwhere(mask & ~er)
-
-
-def longest_edge_to_edge(prop, max_points=1000, topk=8, rng_seed=0):
-    """
-    Returns the length (float) of the longest internal chord within the region `prop`,
-    computed by testing Bresenham lines between boundary pixels and requiring the
-    entire line to lie inside the region. Pixel spacing is assumed to be (1,1).
-    """
-    reg = prop.image.astype(bool)
-    b = boundary_pixels(reg)
-
-    # Degenerate cases
-    if len(b) < 2:
-        return 0.0
-
-    # Subsample boundary if too many points
-    if len(b) > max_points:
-        b = b[np.random.default_rng(rng_seed).choice(len(b), max_points, replace=False)]
-
-    # Pairwise squared distances (in pixels)
-    d = b[:, None, :] - b[None, :, :]
-    d2 = (d**2).sum(-1).astype(np.float64)
-    np.fill_diagonal(d2, -1.0)  # exclude self
-
-    H, W = reg.shape
-    best2 = -1.0
-
-    for i in range(len(b)):
-        # Consider only the farthest `topk` partners for each i
-        if topk >= len(b) - 1:
-            cand = np.argsort(d2[i])[::-1]
-        else:
-            kth = np.argpartition(d2[i], -topk)[-topk:]
-            cand = kth[np.argsort(d2[i][kth])[::-1]]
-
-        rA, cA = map(int, b[i])
-        for j in cand:
-            rB, cB = map(int, b[j])
-            d2_pix = (rB - rA) ** 2 + (cB - cA) ** 2
-            # Early exit for this i if candidates are only shorter than current best
-            if d2_pix <= best2:
-                break
-
-            pts = bresenham(rA, cA, rB, cB)
-            rr, cc = pts[:, 0], pts[:, 1]
-
-            # Bounds & inside checks
-            if rr.min() < 0 or cc.min() < 0 or rr.max() >= H or cc.max() >= W:
-                continue
-            if not reg[rr, cc].all():
-                continue
-
-            best2 = d2_pix  # valid internal chord, keep the best squared length
-
-    return float(best2**0.5) if best2 >= 0.0 else 0.0
+    st.table(df)
 
 
-def build_analysis_df():
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.patches import Circle, Ellipse, Polygon, Rectangle
+
+
+def show_shape_metric_illustrations():
+    st.subheader("Shape Descriptor Illustrations")
+    st.markdown(
+        """
+        These simple sketches illustrate how some of the shape descriptors behave
+        for different kinds of objects. The drawings are schematic, not to scale.
+        """
+    )
+
+    # --- Circularity & compactness ---
+    with st.expander("Circularity & compactness"):
+        fig, ax = plt.subplots(figsize=(3, 3))
+        ax.set_aspect("equal")
+
+        # Circle – high circularity, compact
+        circle = Circle((0.5, 0.5), 0.25, fill=False)
+        ax.add_patch(circle)
+        ax.text(
+            0.5,
+            0.15,
+            "Circle\n(circularity ≈ 1,\ncompactness ≈ 1)",
+            ha="center",
+            va="top",
+            fontsize=8,
+        )
+
+        # Irregular blob – lower circularity, less compact
+        blob = Polygon(
+            [
+                [1.1, 0.75],
+                [1.4, 0.6],
+                [1.35, 0.4],
+                [1.2, 0.3],
+                [1.0, 0.35],
+                [0.95, 0.55],
+            ],
+            closed=True,
+            fill=False,
+        )
+        ax.add_patch(blob)
+        ax.text(
+            1.25,
+            0.15,
+            "Irregular\n(circularity < 1,\ncompactness > 1)",
+            ha="center",
+            va="top",
+            fontsize=8,
+        )
+
+        ax.set_xlim(0, 1.7)
+        ax.set_ylim(0, 1.0)
+        ax.axis("off")
+
+        st.pyplot(fig)
+        st.caption(
+            "Circular shapes have circularity ≈ 1 and compactness ≈ 1. "
+            "Irregular shapes with longer perimeters for the same area have lower circularity and higher compactness."
+        )
+
+    # --- Aspect ratio, elongation & eccentricity ---
+    with st.expander("Aspect ratio, elongation & eccentricity"):
+        fig, ax = plt.subplots(figsize=(3, 3))
+        ax.set_aspect("equal")
+
+        # Nearly circular ellipse
+        ell1 = Ellipse((0.5, 0.5), 0.4, 0.35, fill=False)
+        ax.add_patch(ell1)
+        ax.text(
+            0.5,
+            0.15,
+            "Almost circle\n(aspect ratio ≈ 1,\nlow elongation,\nlow eccentricity)",
+            ha="center",
+            va="top",
+            fontsize=8,
+        )
+
+        # Elongated ellipse
+        ell2 = Ellipse((1.3, 0.5), 0.7, 0.2, fill=False)
+        ax.add_patch(ell2)
+        ax.text(
+            1.3,
+            0.15,
+            "Elongated\n(aspect ratio ≫ 1,\nhigher elongation,\nhigher eccentricity)",
+            ha="center",
+            va="top",
+            fontsize=8,
+        )
+
+        ax.set_xlim(0, 1.8)
+        ax.set_ylim(0, 1.0)
+        ax.axis("off")
+
+        st.pyplot(fig)
+        st.caption(
+            "Aspect ratio is major_axis_length / minor_axis_length. "
+            "Elongation and eccentricity both increase as the ellipse becomes more stretched out."
+        )
+
+    # --- Solidity ---
+    with st.expander("Solidity"):
+        fig, ax = plt.subplots(figsize=(3, 3))
+        ax.set_aspect("equal")
+
+        # Convex shape
+        convex = Polygon(
+            [[0.2, 0.2], [0.6, 0.25], [0.7, 0.6], [0.3, 0.8]], closed=True, fill=False
+        )
+        ax.add_patch(convex)
+        ax.text(
+            0.4,
+            0.1,
+            "Convex\n(solidity ≈ 1)",
+            ha="center",
+            va="top",
+            fontsize=8,
+        )
+
+        # Shape with indentation (concavity)
+        concave = Polygon(
+            [
+                [1.0, 0.2],
+                [1.4, 0.25],
+                [1.45, 0.5],
+                [1.2, 0.45],
+                [1.35, 0.8],
+                [1.0, 0.75],
+            ],
+            closed=True,
+            fill=False,
+        )
+        ax.add_patch(concave)
+        ax.text(
+            1.25,
+            0.1,
+            "Concave\n(solidity < 1)",
+            ha="center",
+            va="top",
+            fontsize=8,
+        )
+
+        ax.set_xlim(0, 1.8)
+        ax.set_ylim(0, 1.0)
+        ax.axis("off")
+
+        st.pyplot(fig)
+        st.caption(
+            "Solidity compares area to the area of the convex hull. "
+            "Deep indentations reduce solidity."
+        )
+
+    # --- Extent & bounding-box aspect ratio ---
+    with st.expander("Extent & bounding-box aspect ratio"):
+        fig, ax = plt.subplots(figsize=(3, 3))
+        ax.set_aspect("equal")
+
+        # Compact object filling box
+        bbox1 = Rectangle((0.1, 0.1), 0.6, 0.6, fill=False, linestyle="dotted")
+        ax.add_patch(bbox1)
+        obj1 = Rectangle((0.15, 0.15), 0.5, 0.5, fill=False)
+        ax.add_patch(obj1)
+        ax.text(
+            0.4,
+            0.05,
+            "High extent\n(object almost fills box)",
+            ha="center",
+            va="top",
+            fontsize=8,
+        )
+
+        # Thin object inside tall box
+        bbox2 = Rectangle((1.0, 0.1), 0.4, 0.8, fill=False, linestyle="dotted")
+        ax.add_patch(bbox2)
+        obj2 = Rectangle((1.05, 0.45), 0.3, 0.1, fill=False)
+        ax.add_patch(obj2)
+        ax.text(
+            1.2,
+            0.05,
+            "Low extent,\nbox aspect ratio ≫ 1",
+            ha="center",
+            va="top",
+            fontsize=8,
+        )
+
+        ax.set_xlim(0, 1.8)
+        ax.set_ylim(0, 1.0)
+        ax.axis("off")
+
+        st.pyplot(fig)
+        st.caption(
+            "Extent measures how much of the bounding box the object occupies. "
+            "Bounding-box aspect ratio reflects how elongated the axis-aligned box is."
+        )
+
+
+@st.cache_data(show_spinner="Building analysis DataFrame...")
+def build_analysis_df(records):
     """
     Build a DataFrame with per-mask metrics for all images in session state.
 
@@ -424,7 +615,7 @@ def build_analysis_df():
         rec = st.session_state.images[k]
         inst = rec.get("masks")
         # skip invalid masks
-        if not isinstance(inst, np.ndarray) or inst.ndim != 2 or not inst.any():
+        if not inst.any():
             continue
 
         labdict = rec.get("labels", {})  # dict {instance_id -> class/None}
@@ -432,19 +623,13 @@ def build_analysis_df():
             iid = int(prop.label)
             cls = labdict.get(iid)
 
-            # precompute your existing chord metric
-            max_ete = longest_edge_to_edge(prop)
-
             # compute shape metrics
-            shape_metrics = mask_shape_metrics(prop, max_edge_to_edge=max_ete)
+            shape_metrics = mask_shape_metrics(prop)
 
             row = {
                 "image": rec["name"],
                 "mask #": iid,
                 "mask label": ("Unlabelled" if cls in (None, "No label") else cls),
-                "mask area": float(prop.area),
-                "mask perimeter": float(prop.perimeter),  # or perimeter_crofton
-                "max edge-to-edge": max_ete,
             }
 
             # merge in the shape metrics
@@ -455,66 +640,6 @@ def build_analysis_df():
     return pd.DataFrame(rows)
 
 
-def build_image_summary_df():
-    """
-    Build a DataFrame with per-image summary of cell counts by class.
-    Columns: image, total cells, unlabelled, <class 1>, <class 2>, etc
-    """
-
-    rows = []
-    all_classes = set()
-
-    # iterate through the image records
-    for k in ordered_keys():
-        rec = st.session_state.images[k]
-        inst = rec.get("masks")
-        if not isinstance(inst, np.ndarray) or inst.ndim != 2:
-            continue
-
-        # get unique instance ids
-        ids = np.unique(inst)
-        ids = ids[ids != 0]
-        total = len(ids)
-
-        labdict = rec.get("labels", {})
-        counts = {}
-        unlabelled = 0
-
-        # count per class
-        for iid in ids:
-            cls = labdict.get(int(iid))
-            if cls is None or cls == "No label":
-                unlabelled += 1
-            else:
-                counts[cls] = counts.get(cls, 0) + 1
-                all_classes.add(cls)
-
-        rows.append(
-            {
-                "image": rec["name"],
-                "total cells": total,
-                "unlabelled": unlabelled,
-                **counts,
-            }
-        )
-
-    if not rows:
-        return pd.DataFrame()
-
-    df = pd.DataFrame(rows).fillna(0)
-    # convert counts to int
-    for col in df.columns:
-        if col != "image":
-            df[col] = df[col].astype(int)
-
-    # ensure all classes are present as columns
-    for cls in sorted(all_classes):
-        if cls not in df.columns:
-            df[cls] = 0
-
-    return df
-
-
 # --- FUNCTIONS FOR DOWNLOADING CLASS CHARACTERISTICS PLOTS
 
 
@@ -523,18 +648,13 @@ def build_cell_metrics_zip(labels_selected):
     Build a ZIP archive (bytes) containing cell metrics CSV and plots
     for the selected labels (list of str). If empty, include all labels.
     """
-
-    df = build_analysis_df()
+    df = build_analysis_df(st.session_state["images"])
     if labels_selected:
         df = df[df["mask label"].isin(labels_selected)]
     items = []
     if not df.empty:
         items.append(("cell_analysis.csv", df.to_csv(index=False).encode("utf-8")))
-    counts_df = build_image_summary_df()
-    if not counts_df.empty:
-        items.append(
-            ("image_counts.csv", counts_df.to_csv(index=False).encode("utf-8"))
-        )
+
     items += st.session_state.get("analysis_plots", [])
     return build_plots_zip(items) if items else b""
 

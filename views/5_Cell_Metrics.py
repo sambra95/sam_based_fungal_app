@@ -17,7 +17,5 @@ if not any(np.any(st.session_state["images"][k]["masks"]) for k in ordered_keys(
 with st.container(border=True):
     cell_metrics_panel.render_plotting_options()
 
-st.divider()
-
-if st.button("Generate Plots"):
-    cell_metrics_panel.render_plotting_main()
+    if st.button("Generate Plots", use_container_width=True, type="primary"):
+        cell_metrics_panel.render_plotting_main()

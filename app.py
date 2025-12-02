@@ -65,7 +65,7 @@ pages = [
     ),
     st.Page(
         "views/5_Cell_Metrics.py",
-        title="Visualize Class Attributes",
+        title="Visualize Cell Attributes",
         icon="📊",
     ),
 ]

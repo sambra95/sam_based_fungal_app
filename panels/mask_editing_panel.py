@@ -135,17 +135,28 @@ def render_download_button():
                 "Include cell patch images", False, key="dl_include_patches"
             )
 
-        # 🔹 Only build the dataset when the user actually clicks the button
-        if st.button("Prepare dataset ZIP", use_container_width=True):
-            mz = build_masks_images_zip(
-                images, ok, include_overlay, include_counts, include_patches
+            include_summary = st.checkbox(
+                "Include table of per image cell counts",
+                True,
+                key="dl_include_summary",
             )
-            st.download_button(
-                "Download dataset (zip)",
-                mz,
-                "masks_and_images.zip",
-                "application/zip",
-                use_container_width=True,
-            )
-        else:
-            st.caption("Click to prepare the dataset before downloading.")
+
+            # 🔹 Only build the dataset when the user actually clicks the button
+            if st.button(
+                "Prepare annotated images for download", use_container_width=True
+            ):
+                mz = build_masks_images_zip(
+                    images,
+                    ok,
+                    include_overlay,
+                    include_counts,
+                    include_patches,
+                    include_summary,
+                )
+                st.download_button(
+                    "Download dataset (zip)",
+                    mz,
+                    "masks_and_images.zip",
+                    "application/zip",
+                    use_container_width=True,
+                )
