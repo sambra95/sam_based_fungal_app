@@ -27,8 +27,8 @@ Mycol is a Streamlit-based application that makes machine-learning-assisted micr
 ### **Cell Metrics & Phenotyping**
 - Automatic computation of cell descriptors (size, shape, elongation, compactness, etc.)  
 - Visual comparison of phenotypic classes  
-- Export plots and tabulated metrics  
-- Built-in explanations for metric interpretation  
+- Export plots and tabulated descriptors  
+- Built-in explanations for descriptor interpretation  
 
 ### **Lightweight & Accessible**
 - Runs locally on standard hardware  
@@ -59,15 +59,9 @@ streamlit run app.py
 
 ## **Example Use Cases**
 - Rapid cell counting  
-- Creating curated annotated datasets  
-- Semi-automated segmentation with human correction  
+- Creating curated datasets of annotated images
+- Automating image annotation (with human QC)  
 - Morphology-based phenotypic comparison  
-
----
-
-## **Contributing**
-Issues and pull requests are welcome.  
-Please open an issue first if proposing major changes.
 
 ---
 
