@@ -1,7 +1,7 @@
 # **Mycol**  
 *A lightweight, human-in-the-loop microscopy image analysis app.*
 
-Mycol is a Streamlit-based application that makes machine-learning–assisted microscopy analysis accessible to non-specialists. It enables fast annotation, automated segmentation and classification, model fine-tuning, and quantitative phenotyping—all on a standard laptop and without coding.
+Mycol is a Streamlit-based application that makes machine-learning-assisted microscopy analysis accessible to non-specialists. It enables fast annotation, automated segmentation and classification, model fine-tuning, and quantitative phenotyping, all on a standard laptop and without coding.
 
 ---
 
