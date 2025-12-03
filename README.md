@@ -39,15 +39,19 @@ Mycol is a Streamlit-based application that makes machine-learning–assisted mi
 
 ## **Installation**
 
+```bash
 git clone https://github.com/<your-username>/mycol.git
 cd mycol
 pip install -r requirements.txt
+```
 
 ---
 
 ## **Run the App**
 
+```bash
 streamlit run app.py
+```
 
 ---
 
