@@ -352,7 +352,6 @@ def random_augmentation_pipeline(image_np, num_transforms=3):
 # -------------------------------
 
 
-@st.cache_resource(show_spinner="Loading Densenet121 weights…")
 def build_densenet(input_shape=(64, 64, 3), num_classes=2):
     # Fresh DenseNet (no ImageNet normalization dependency)
     base = DenseNet121(weights="imagenet", include_top=False, input_shape=input_shape)
