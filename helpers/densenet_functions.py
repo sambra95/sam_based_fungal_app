@@ -162,15 +162,12 @@ def densenet_mapping_fragment():
         return  # nothing to configure if model isn't loaded
 
     n_classes = get_densenet_num_classes(model)
-    if n_classes is None:
-        st.warning("Could not determine number of classes from the DenseNet model.")
-        return
 
     # Make sure global classes list exists
     all_classes = ss.setdefault("all_classes", ["No label"])
     class_map = ensure_densenet_class_map()
 
-    st.markdown("### Map model classes to labels")
+    st.markdown("### Map model predictions to labels")
 
     for idx in range(n_classes):
 
@@ -204,7 +201,7 @@ def classify_cells_with_densenet(rec: dict) -> None:
     M = rec.get("masks")
 
     # exit if no masks for classification
-    if model is None or not isinstance(M, np.ndarray) or M.ndim != 2 or not np.any(M):
+    if not np.any(M):
         return
 
     # extract normalized cell patches and ids
@@ -235,7 +232,6 @@ def classify_cells_with_densenet(rec: dict) -> None:
             all_classes.append(name)
 
     ss["all_classes"] = all_classes
-    ss.images[ss.current_key] = rec
 
 
 # -------------------------------

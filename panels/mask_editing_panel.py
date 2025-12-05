@@ -29,13 +29,13 @@ def render_segment_sidebar(*, key_ns: str = "side"):
     with st.container(border=True):
         st.subheader("Segmentation controls:")
 
-        render_mask_tools_fragment(key_ns)
-
+        # render cellpose controls
         with st.popover(
             "Segment cells with Cellpose",
             disabled=st.session_state["cellpose_model_bytes"] == None,
             use_container_width=True,
             help="Segment cells using the loaded Cellpose model.",
+            type="primary",
         ):
 
             col1, col2 = st.columns([1, 1])
@@ -63,17 +63,23 @@ def render_segment_sidebar(*, key_ns: str = "side"):
             st.caption(
                 "If needed, you can alter Cellpose hyperparameters before segmenting:"
             )
+
             with st.expander(
                 "Cellpose hyperparameters",
             ):
                 render_cellpose_hyperparameters_fragment()
 
+        # render SAM2 controls
         with st.popover(
             "Segment cells with SAM2",
             use_container_width=True,
             help="Draw boxes and click segment to use SAM2 to segment individual cells.",
+            type="primary",
         ):
             render_box_tools_fragment(key_ns)
+
+        # section for selecting tools for directly adding/removing masks
+        render_mask_tools_fragment(key_ns)
 
 
 def render_classify_sidebar(*, key_ns: str = "side"):
@@ -81,28 +87,19 @@ def render_classify_sidebar(*, key_ns: str = "side"):
     with st.container(border=True):
         st.markdown("### Classification controls:")
 
-        with st.popover(label="Add or Remove Classes", use_container_width=True):
+        with st.popover(
+            label="Manage Labels", use_container_width=True, type="primary"
+        ):
             class_manage_fragment(key_ns)  # add/delete/rename
 
-        class_selection_fragment()
-
-        # Show warning if a classifier is loaded but all labels are "No label"
-        if not st.session_state["densenet_model"] == None:
-            needs_mapping = all(
-                label == "No label"
-                for label in st.session_state["densenet_class_map"].values()
-            )
-
-            if needs_mapping:
-                st.warning(
-                    "All model predictions are currently mapped to 'No label'. "
-                    "Please assign at least one label under 'Map predictions to classes' below."
-                )
-
         # Action buttons to classify cells with Densenet
-        with st.popover("Classify cells with Densenet", use_container_width=True):
+        with st.popover(
+            "Classify cells with Densenet", use_container_width=True, type="primary"
+        ):
 
             classify_actions_fragment()
+
+        class_selection_fragment()
 
 
 def render_main(*, key_ns: str = "edit"):
@@ -119,7 +116,9 @@ def render_download_button():
     ok = ordered_keys() if images else []
 
     with st.container(border=True):
-        with st.popover(label="Download options", use_container_width=True):
+        with st.popover(
+            label="Download options", use_container_width=True, type="primary"
+        ):
             c1, c2 = st.columns(2)
             include_overlay = c1.checkbox(
                 "Include colored mask overlays", True, key="dl_include_overlay"
@@ -143,7 +142,9 @@ def render_download_button():
 
             # 🔹 Only build the dataset when the user actually clicks the button
             if st.button(
-                "Prepare annotated images for download", use_container_width=True
+                "Prepare annotated images for download",
+                use_container_width=True,
+                type="primary",
             ):
                 mz = build_masks_images_zip(
                     images,
@@ -159,4 +160,5 @@ def render_download_button():
                     "masks_and_images.zip",
                     "application/zip",
                     use_container_width=True,
+                    type="primary",
                 )

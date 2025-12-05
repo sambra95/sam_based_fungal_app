@@ -274,19 +274,43 @@ def add_label_from_input(labels, new_label_ss):
 # -----------------------------------------------------#
 
 
+def densenet_help(has_model, needs_mapping):
+    if not has_model:
+        if needs_mapping:
+            return "All predictions are mapped to 'No label'. Add some classes under 'Manage Classes' and map them to the predictions below."
+        return "Classify all masks in this image with the loaded Densenet121 model."
+    return "Upload or fine-tune a Densenet model before auto-classifying cells."
+
+
 @st.fragment
 def classify_actions_fragment():
+
+    # Show warning if a classifier is loaded but all labels are "No label"
+    if not st.session_state["densenet_model"] == None:
+        needs_mapping = all(
+            label == "No label"
+            for label in st.session_state["densenet_class_map"].values()
+        )
+
+        if needs_mapping:
+            st.toast(
+                "All densenet model predictions are currently mapped to 'No label'. "
+                "Please assign at least one label under 'Classify Cells with Densenet'.",
+                duration="infinite",
+            )
+
     rec = get_current_rec()
 
     # buttons to classify masks in current image or batch classify all images
     col1, col2 = st.columns(2)
     with col1:
+        help = densenet_help(st.session_state["densenet_model"] == None, needs_mapping)
         # classify masks in the current image
         if st.button(
             "Classify cells",
             use_container_width=True,
-            help="Classify all masks in this image with the loaded Densenet121 model.",
-            disabled=st.session_state["densenet_model"] == None,
+            help=help,
+            disabled=(st.session_state["densenet_model"] == None) or needs_mapping,
         ):
             classify_cells_with_densenet(rec)
             st.rerun()
@@ -296,22 +320,20 @@ def classify_actions_fragment():
             "Batch classify cells",
             key="btn_batch_classify_cellpose",
             use_container_width=True,
-            help="Batch classify all masks in all images with the loaded Densenet121 model.",
-            disabled=st.session_state["densenet_model"] == None,
+            help=help,
+            disabled=st.session_state["densenet_model"] == None or needs_mapping,
         ):
             batch_classify()
             st.rerun()
 
     # mapping fragment for assiging model outputs to classes
-    with st.expander("Map predictions to classes"):
+    with st.expander("Map model predictions to cell classes"):
         densenet_mapping_fragment()
 
 
 def batch_classify():
     """classify masks in the all images"""
     ok = ordered_keys()
-    if not ok:
-        return
     n = len(ok)
     pb = st.progress(0.0, text="Starting…")
     for i, k in enumerate(ok, 1):

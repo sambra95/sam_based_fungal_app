@@ -534,9 +534,6 @@ def batch_segment_and_refresh():
     for i, k in enumerate(ok, 1):
         segment_with_cellpose(st.session_state.images.get(k), **params)
         pb.progress(i / n, text=f"Segmented {i}/{n}")
-    pb.empty()
-    st.session_state["edit_canvas_nonce"] += 1
-    st.rerun()
 
 
 def get_cellpose_hparams_from_state():
