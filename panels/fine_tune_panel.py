@@ -24,6 +24,10 @@ from helpers.cellpose_functions import (
     get_cellpose_model,
     build_cellpose_zip_bytes,
 )
+from helpers.help_panels import (
+    classifier_training_plot_help,
+    cellpose_training_plot_help,
+)
 
 
 ss = st.session_state
@@ -525,7 +529,7 @@ def show_cellpose_training_plots():
     else:
 
         st.header("Cellpose Training Summary")
-        training_plot_help()
+        cellpose_training_plot_help()
 
         col1, col2 = st.columns(2)
         with col1:
@@ -576,202 +580,3 @@ def show_cellpose_training_plots():
             use_container_width=True,
             type="primary",
         )
-
-
-from pathlib import Path
-
-# Path to this file
-HERE = Path(__file__).resolve()
-
-# Project root = parent of "helpers"
-PROJECT_ROOT = HERE.parent.parent
-
-# Folder containing the SVG diagrams (sibling of "helpers")
-DIAGRAM_DIR = PROJECT_ROOT / "descriptor_diagrams"
-
-
-def training_plot_help():
-    with st.popover("How do I interpret these graphs?"):
-        st.subheader("Cellpose Training Graphs")
-
-        st.markdown(
-            """
-            Below is a quick reference for the plots generated during Cellpose training.
-            Use this as a guide when assessing the quality and behavior of your trained model.
-            """
-        )
-
-        # --- Training vs. Test Loss ---
-        with st.expander("Training vs. Test Loss"):
-            st.markdown(
-                """
-                This plot shows how the loss changes over training epochs for both:
-
-                - **Training loss** – how well the model fits the training images.
-                - **Test (validation) loss** – how well the model generalizes to held-out test images.
-
-                In general, you want:
-
-                - **Both losses to decrease** as training proceeds.
-                - **Test loss to plateau or reach a minimum**, then stop training around that point.
-
-                If training loss continues to decrease while test loss starts to increase or becomes noisy,
-                the model may be **overfitting**, which usually leads to worse performance on new data.
-                After test loss stops improving, additional training is unlikely to help and can be harmful.
-                """
-            )
-
-            st.image(
-                DIAGRAM_DIR / "train_test_loss.svg",
-                use_container_width=True,
-            )
-
-        # --- IoU Comparison ---
-        with st.expander("IoU Comparison"):
-            st.markdown(
-                """
-                **Intersection over Union (IoU)** is a standard metric for image segmentation performance.
-                It measures how well the **predicted mask** overlaps with the **ground truth mask**:
-
-                IoU = (area of overlap) / (area of union)
-
-                In this context:
-
-                - **Higher IoU values indicate better model performance.**
-                - The bar plot shows the **mean mask IoU per image** for:
-                  - the **original model** (left), and
-                  - the **fine-tuned model** trained on your dataset (right).
-
-                If the bars for the fine-tuned model are generally higher than for the original model,
-                your fine-tuning has likely improved segmentation quality on your data.
-                """
-            )
-
-            st.image(
-                DIAGRAM_DIR / "iou.svg",
-                use_container_width=True,
-            )
-
-        # --- Predicted vs Real Counts ---
-        with st.expander("Predicted vs. Real Counts"):
-            st.markdown(
-                """
-                These plots evaluate performance on **cell counting** tasks by comparing the **true** and
-                **predicted** number of cells per image for:
-
-                - the **original model** (left), and
-                - the **fine-tuned model** (right).
-
-                Key things to look for:
-
-                - Points close to the **x = y line** → predictions match the true counts.
-                - **High R² (coefficient of determination)** → predictions explain most of the variance in true counts.
-                - **Low mean absolute error (MAE)** → on average, the predicted counts are close to the real counts.
-
-                Models with points tightly clustered around the x = y line, **R² close to 1**, and **low MAE**
-                are performing well on the counting task.
-                """
-            )
-
-            st.image(
-                DIAGRAM_DIR / "counts.svg",
-                use_container_width=True,
-            )
-
-
-def classifier_training_plot_help():
-    with st.popover("How do I interpret these graphs?"):
-        st.subheader("Classifier Training Graphs")
-
-        st.markdown(
-            """
-            Below is a quick reference for the plots generated during classifier training.
-            Use this guide to help interpret model performance and diagnose potential issues.
-            """
-        )
-
-        # --- Training vs. Test Loss ---
-        with st.expander("Training vs. Test Loss"):
-            st.markdown(
-                """
-                This plot shows how the loss changes over training epochs for both:
-
-                - **Training loss** – how well the model fits the training data.
-                - **Test (validation) loss** – how well the model generalizes to unseen data.
-
-                Desired behavior:
-
-                - **Both curves should decrease** as training progresses.
-                - **Test loss should reach a minimum** or plateau.
-                - If training loss continues to decrease while test loss increases, the model is likely **overfitting**.
-
-                When test loss stops improving, additional training usually will not increase performance
-                and may degrade generalization.
-                """
-            )
-
-            st.image(
-                DIAGRAM_DIR / "train_test_loss.svg",
-                use_container_width=True,
-            )
-
-        # --- Accuracy, Precision, and F1 Scores ---
-        with st.expander("Accuracy, Precision, Recall, and F1 Scores"):
-            st.markdown(
-                r"""
-                ##### **Accuracy**
-                Proportion of all predictions that are correct.  *Interpretation:* Higher accuracy means the model is correct more often overall. In multiclass settings, accuracy can look high even if some classes perform poorly.
-
-                $$\text{Accuracy} = \frac{TP + TN}{TP + TN + FP + FN}$$
-                
-
-                ##### **Precision**
-                Of predicted positives, how many were correct. *Interpretation:* Higher precision means fewer false positives. In multiclass results (macro/weighted), it reflects how reliably the model’s positive predictions are correct across all classes.  
-                
-                $$\text{Precision} = \frac{TP}{TP + FP}$$
-                
-
-                ##### **Recall**
-                Of actual positives, how many were correctly identified. *Interpretation:* Higher recall means fewer missed cases. As an overall metric, it summarizes how well the model captures true instances across all classes.
-                
-                $$\text{Recall} = \frac{TP}{TP + FN}$$
-                
-
-                ##### **F1 Score**
-                Harmonic mean of precision and recall. *Interpretation:* Higher F1 means the model maintains a good balance between precision and recall. Useful in multiclass settings because it is less affected by class imbalance than accuracy alone.  
-                
-                $$F1 = 2 \cdot \frac{P \cdot R}{P + R}$$
-                """
-            )
-
-            st.image(
-                DIAGRAM_DIR / "acc_prec_f1.svg",
-                use_container_width=True,
-            )
-
-        # --- Confusion Matrix ---
-        with st.expander("Confusion Matrix"):
-            st.markdown(
-                """
-                A confusion matrix shows **how often each class is predicted as each other class**.
-
-                - **Rows** represent the *true* classes.
-                - **Columns** represent the *predicted* classes.
-                - Perfect classification would produce strong diagonal values and zeros elsewhere.
-
-                How to interpret:
-                - **High diagonal values** → correct predictions.
-                - **Off-diagonal values** → misclassifications (which classes get confused).
-                - Blocks of confusion may indicate:
-                    - insufficient training data for certain classes,
-                    - classes with very similar cells,
-                    - or inadequate model capacity.
-
-                Use this plot to identify which classes require more attention or additional data augmentation.
-                """
-            )
-
-            st.image(
-                DIAGRAM_DIR / "confusion_matrix.svg",
-                use_container_width=True,
-            )

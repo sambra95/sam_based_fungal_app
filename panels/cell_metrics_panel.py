@@ -6,8 +6,8 @@ from helpers.cell_metrics_functions import (
     plot_violin,
     plot_bar,
     build_cell_metrics_zip,
-    show_shape_metric_reference,
 )
+from helpers.help_panels import shape_metric_help
 
 
 @st.fragment
@@ -35,7 +35,7 @@ def render_plotting_options():
         )
 
         with st.popover(label="Descriptor Information", use_container_width=True):
-            show_shape_metric_reference()
+            shape_metric_help()
 
     with col2:
         # build the analysis dataframe
