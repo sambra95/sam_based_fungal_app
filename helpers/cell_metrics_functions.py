@@ -1,15 +1,11 @@
-import io
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from helpers.state_ops import ordered_keys
 from skimage.measure import regionprops
-from zipfile import ZipFile
 from pathlib import Path
-from zipfile import ZIP_DEFLATED
 from helpers.classifying_functions import color_hex_for
-from pathlib import Path
 
 
 def hex_for_plot_label(label: str) -> str:
@@ -182,7 +178,7 @@ def add_data_points_to_plot(plot, order, sub, value_col, xpos):
 
         imgs = sub.loc[idx, "image"].astype(str).to_numpy()
         masks = sub.loc[idx, "mask #"].astype(str).to_numpy()
-        texts = [f"{im}_patch{mk}" for im, mk in zip(imgs, masks)]
+        texts = [f"{Path(im).stem}_patch{mk}" for im, mk in zip(imgs, masks)]
 
         rng = np.random.default_rng(42 + i)  # deterministic jitter per label
         xj = np.full(ys.shape, xpos[i], dtype=float) + rng.uniform(-0.20, 0.20, ys.size)
@@ -201,7 +197,7 @@ def add_data_points_to_plot(plot, order, sub, value_col, xpos):
                     line=dict(width=0.3, color="black"),
                 ),
                 text=texts,
-                hovertemplate="Image: %{text}<extra></extra>",
+                hovertemplate="%{text}<extra></extra>",
             )
         )
 
