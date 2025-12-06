@@ -143,14 +143,20 @@ def render_densenet_train_fragment():
         return
 
     # fine tune the densenet model
-    history, val_gen, classes = finetune_densenet(
-        input_size=input_size, batch_size=batch_size, epochs=epochs, val_split=val_split
-    )
+    with st.spinner(
+        "Fine-tuning Densenet. Grab a coffee! Clicking elsewhere within the app now will interrupt training..."
+    ):
+        history, val_gen, classes = finetune_densenet(
+            input_size=input_size,
+            batch_size=batch_size,
+            epochs=epochs,
+            val_split=val_split,
+        )
 
-    # evaluate the fine tuned densenet model on validation dataset
-    evaluate_fine_tuned_densenet(history=history, val_gen=val_gen, classes=classes)
+        # evaluate the fine tuned densenet model on validation dataset
+        evaluate_fine_tuned_densenet(history=history, val_gen=val_gen, classes=classes)
 
-    ss["dn_zip_bytes"] = build_densenet_zip_bytes(input_size)
+        ss["dn_zip_bytes"] = build_densenet_zip_bytes(input_size)
 
 
 def show_densenet_training_plots():

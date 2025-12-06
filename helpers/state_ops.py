@@ -45,7 +45,7 @@ def ensure_global_state() -> None:
     ss.setdefault("cp_cellprob_threshold", 0.2)
     ss.setdefault("cp_diameter", 0)
 
-    # cellpose training
+    # densenet training
     ss.setdefault("densenet_ckpt_bytes", None)
     ss.setdefault("dn_input_size", 64)
     ss.setdefault("dn_batch_size", 32)
