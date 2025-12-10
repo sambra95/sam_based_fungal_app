@@ -144,18 +144,17 @@ def render_download_button():
         with st.popover(
             label="Download options", use_container_width=True, type="primary"
         ):
-            c1, c2 = st.columns(2)
-            include_overlay = c1.checkbox(
+            include_overlay = st.checkbox(
                 "Include colored mask overlays", True, key="dl_include_overlay"
             )
-            include_counts = c2.checkbox(
+            include_counts = st.checkbox(
                 "Overlay per-image class counts", False, key="dl_include_counts"
             )
-            c1.checkbox(
+            st.checkbox(
                 "Normalize downloaded images", False, key="dl_normalize_download"
             )
 
-            include_patches = c2.checkbox(
+            include_patches = st.checkbox(
                 "Include cell patch images", False, key="dl_include_patches"
             )
 
@@ -180,7 +179,7 @@ def render_download_button():
                     include_summary,
                 )
                 st.download_button(
-                    "Download dataset (zip)",
+                    "Download dataset",
                     mz,
                     "masks_and_images.zip",
                     "application/zip",

@@ -167,8 +167,6 @@ def densenet_mapping_fragment():
     all_classes = ss.setdefault("all_classes", ["No label"])
     class_map = ensure_densenet_class_map()
 
-    st.markdown("### Map model predictions to labels")
-
     for idx in range(n_classes):
 
         current = class_map.get(idx)
