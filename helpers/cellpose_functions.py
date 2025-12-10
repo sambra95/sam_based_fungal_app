@@ -199,6 +199,42 @@ def segment_with_cellpose(
     }  # reset/realign
 
 
+def segment_with_cellpose_sam(
+    rec: dict,
+    use_gpu=core.use_gpu,  # new: control GPU usage for Cellpose-SAM
+) -> dict:
+    """
+    Runs Cellpose-SAM on rec['image'] and overwrites rec['masks'] with a single (H,W)
+    integer label image (0=background, 1..N=instances). Resets rec['labels'].
+    """
+
+    # prepare input image for Cellpose
+    im_in = preprocess_for_cellpose(rec)
+
+    # create Cellpose-SAM model instance
+    # (this uses the new CellposeModel interface, which can use SAM internally)
+    cell_model = load_cellpose_sam_model(core.use_gpu)
+
+    masks_out, flows, styles = cell_model.eval(
+        [im_in],
+    )
+
+    # handle list/tuple output
+    mask_output = masks_out[0] if isinstance(masks_out, (list, tuple)) else masks_out
+
+    # set record masks to new predicted mask matrix
+    rec["masks"] = convert_cellpose_mask_to_single_array(
+        mask_output, rec["H"], rec["W"]
+    )
+
+    # clear any labels in the record (no new masks are labelled)
+    rec["labels"] = {
+        int(i): None for i in np.unique(rec["masks"]) if i != 0
+    }  # reset/realign
+
+    return rec
+
+
 # -----------------------------------------------------#
 # ----------------- CELLPOSE FIGURES ----------------- #
 # -----------------------------------------------------#
@@ -355,6 +391,11 @@ def load_base_cellpose_model(base_model: str):
     init_model = None if base_model == "scratch" else base_model
     cell_model = models.CellposeModel(gpu=core.use_gpu, model_type=init_model)
     return cell_model
+
+
+@st.cache_resource
+def load_cellpose_sam_model(_use_gpu):  # _ stops streamlit hashing the argument
+    return models.CellposeModel(gpu=_use_gpu)
 
 
 def finetune_cellpose(
@@ -530,6 +571,25 @@ def batch_segment_and_refresh():
     pb = st.progress(0.0, text="Starting…")
     for i, k in enumerate(ok, 1):
         segment_with_cellpose(st.session_state.images.get(k), **params)
+        pb.progress(i / n, text=f"Segmented {i}/{n}")
+
+
+def segment_current_and_refresh_cellpose_sam():
+    """calls cellpose to segment the current image"""
+    rec = get_current_rec()
+    if rec is not None:
+        segment_with_cellpose_sam(rec)
+        st.session_state["edit_canvas_nonce"] += 1
+    st.rerun()
+
+
+def batch_segment_current_and_refresh_cellpose_sam():
+    """calls cellpose to segment the current image"""
+    ok = ordered_keys()
+    n = len(ok)
+    pb = st.progress(0.0, text="Starting…")
+    for i, k in enumerate(ok, 1):
+        segment_with_cellpose_sam(st.session_state.images.get(k))
         pb.progress(i / n, text=f"Segmented {i}/{n}")
 
 

@@ -16,6 +16,8 @@ from helpers.classifying_functions import (
 from helpers.cellpose_functions import (
     segment_current_and_refresh,
     batch_segment_and_refresh,
+    segment_current_and_refresh_cellpose_sam,
+    batch_segment_current_and_refresh_cellpose_sam,
 )
 
 from helpers.upload_download_functions import (
@@ -32,11 +34,34 @@ def render_segment_sidebar(*, key_ns: str = "side"):
         # render cellpose controls
         with st.popover(
             "Segment cells with Cellpose",
-            disabled=st.session_state["cellpose_model_bytes"] == None,
             use_container_width=True,
             help="Segment cells using the loaded Cellpose model.",
             type="primary",
         ):
+
+            st.caption("Use an out of the box model to add masks:")
+
+            col1, col2 = st.columns([1, 1])
+
+            with col1:
+
+                if st.button(
+                    "Generate Masks",
+                    use_container_width=True,
+                    key="segment_image_SAM",
+                ):
+                    segment_current_and_refresh_cellpose_sam()
+
+            with col2:
+                if st.button(
+                    "Batch Generate Masks",
+                    use_container_width=True,
+                    key="batch_segment_image_sam",
+                    help="Segment all uploaded images with Cellpose.",
+                ):
+                    batch_segment_current_and_refresh_cellpose_sam()
+
+            st.caption("Use your fine-tuned model to add masks:")
 
             col1, col2 = st.columns([1, 1])
 
