@@ -201,7 +201,14 @@ def segment_with_cellpose(
 
 def segment_with_cellpose_sam(
     rec: dict,
-    use_gpu=core.use_gpu,  # new: control GPU usage for Cellpose-SAM
+    *,
+    channels=(0, 0),
+    diameter=None,
+    cellprob_threshold=-0.2,
+    flow_threshold=0.4,
+    min_size=0,
+    niter=0,
+    use_gpu=core.use_gpu,  # control GPU usage for Cellpose-SAM
 ) -> dict:
     """
     Runs Cellpose-SAM on rec['image'] and overwrites rec['masks'] with a single (H,W)
@@ -211,12 +218,22 @@ def segment_with_cellpose_sam(
     # prepare input image for Cellpose
     im_in = preprocess_for_cellpose(rec)
 
-    # create Cellpose-SAM model instance
-    # (this uses the new CellposeModel interface, which can use SAM internally)
-    cell_model = load_cellpose_sam_model(core.use_gpu)
+    # handle diameter=0 as "auto" (same behavior as plain Cellpose function)
+    if diameter == 0:
+        diameter = None
 
+    # create Cellpose-SAM model instance
+    cell_model = load_cellpose_sam_model(use_gpu)
+
+    # run model with explicit hyperparameters
     masks_out, flows, styles = cell_model.eval(
         [im_in],
+        channels=list(channels),
+        diameter=diameter,
+        cellprob_threshold=cellprob_threshold,
+        flow_threshold=flow_threshold,
+        min_size=min_size,
+        niter=niter,
     )
 
     # handle list/tuple output
@@ -578,7 +595,8 @@ def segment_current_and_refresh_cellpose_sam():
     """calls cellpose to segment the current image"""
     rec = get_current_rec()
     if rec is not None:
-        segment_with_cellpose_sam(rec)
+        params = get_cellpose_hparams_from_state()
+        segment_with_cellpose_sam(rec, **params)
         st.session_state["edit_canvas_nonce"] += 1
     st.rerun()
 
@@ -587,9 +605,10 @@ def batch_segment_current_and_refresh_cellpose_sam():
     """calls cellpose to segment the current image"""
     ok = ordered_keys()
     n = len(ok)
+    params = get_cellpose_hparams_from_state()
     pb = st.progress(0.0, text="Starting…")
     for i, k in enumerate(ok, 1):
-        segment_with_cellpose_sam(st.session_state.images.get(k))
+        segment_with_cellpose_sam(st.session_state.images.get(k), **params)
         pb.progress(i / n, text=f"Segmented {i}/{n}")
 
 

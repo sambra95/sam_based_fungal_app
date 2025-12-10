@@ -76,11 +76,11 @@ with col1:
                 )
 
         # --- Toggles for overlay and normalization ---
-        inner_col1, inner_col2 = st.columns([1, 2])
+        inner_col1, inner_col2, inner_col3 = st.columns([1, 1, 1])
         with inner_col1:
             # toggle to show/hide masks overlay
             show_overlay_toggle = st.toggle(
-                "Show masks",
+                "Masks",
                 key="show_overlay_w",
                 value=st.session_state.get("show_overlay", True),
             )
@@ -89,11 +89,19 @@ with col1:
         with inner_col2:
             # toggle to normalize background image
             normalize_image_toggle = st.toggle(
-                "Normalize image",
+                "Normalize",
                 key="show_normalized_w",
                 value=st.session_state.get("show_normalized", True),
             )
             st.session_state["show_normalized"] = normalize_image_toggle
+
+        with inner_col3:
+            show_image_toggle = st.toggle(
+                "Image",
+                key="show_image_w",
+                value=st.session_state.get("show_image_w", True),
+            )
+            st.session_state["show_image"] = show_image_toggle
 
         # Tabs for editing and classifying masks
         listTabs = ["Segment Cells", "Classify Cells"]

@@ -43,7 +43,9 @@ def render_segment_sidebar(*, key_ns: str = "side"):
                 "Select a model and generate masks for this image or all images."
             )
 
-            model_family = st.selectbox("Select model", ["Cellpose4", "Uploaded Model"])
+            model_family = st.selectbox(
+                "Select model", ["Cellpose4", "Fine-tuned Model"]
+            )
 
             col1, col2 = st.columns([1, 1])
 
@@ -89,14 +91,12 @@ def render_segment_sidebar(*, key_ns: str = "side"):
                     ):
                         batch_segment_and_refresh()
 
-                st.caption(
-                    "If needed, you can alter Cellpose hyperparameters before segmenting:"
-                )
+            st.caption("Change parameters to to reduce errors:")
 
-                with st.expander(
-                    "Cellpose hyperparameters",
-                ):
-                    render_cellpose_hyperparameters_fragment()
+            with st.expander(
+                "Cellpose hyperparameters",
+            ):
+                render_cellpose_hyperparameters_fragment()
 
         # render SAM2 controls
         with st.popover(
