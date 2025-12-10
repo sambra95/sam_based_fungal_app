@@ -2,7 +2,7 @@
 import os
 import streamlit as st
 
-st.set_page_config(page_title="Mycol", page_icon="🧬", layout="wide")
+st.set_page_config(page_title="Mycol", page_icon="👨🏼‍🔬", layout="wide")
 
 # ------------------ Boot steps ------------------ #
 from boot import configure_tf_cpu_only
