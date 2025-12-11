@@ -478,6 +478,8 @@ def render_cellpose_hyperparameters_fragment():
         "Cell probability threshold",
         value=float(st.session_state.get("cp_cellprob_threshold")),
         step=0.1,
+        min_value=-2.0,
+        max_value=2.0,
         key="w_cp_cellprob_threshold",
         help="Higher -> fewer cells.",
     )
@@ -488,6 +490,8 @@ def render_cellpose_hyperparameters_fragment():
         "Flow threshold",
         value=float(st.session_state.get("cp_flow_threshold")),
         step=0.1,
+        min_value=-2.0,
+        max_value=2.0,
         key="w_cp_flow_threshold",
         help="Lower -> more permissive flows.",
     )
@@ -509,6 +513,7 @@ def render_cellpose_hyperparameters_fragment():
         "Niter",
         value=int(st.session_state["cp_niter"]),
         min_value=0,
+        max_value=2000,
         step=10,
         key="w_cp_niter",
         help="Higher values favour longer, stringier, cells.",
