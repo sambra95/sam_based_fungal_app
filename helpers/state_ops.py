@@ -110,9 +110,9 @@ def reset_global_state() -> None:
     ss["cp_ch1"] = 0
     ss["cp_ch2"] = 0
     ss["cp_min_size"] = 0
-    ss["cp_niter"] = 0
-    ss["cp_flow_threshold"] = 0.3
-    ss["cp_cellprob_threshold"] = 0.2
+    ss["cp_niter"] = 500
+    ss["cp_flow_threshold"] = 0.0
+    ss["cp_cellprob_threshold"] = 0.0
     ss["cp_diameter"] = 0
 
     # --- DenseNet training defaults ---
