@@ -12,10 +12,11 @@ from helpers.help_panels import shape_metric_help
 
 @st.fragment
 def render_plotting_options():
-    col1, col2 = st.columns([1, 5])
+    col1, col2 = st.columns([2, 5])
     with col1:
+        inner_col1, inner_col2 = st.columns(2)
         # choose plot type
-        plot_type = st.radio(
+        plot_type = inner_col1.radio(
             "Plot type",
             ["Violin", "Bar"],
             horizontal=True,
@@ -28,14 +29,17 @@ def render_plotting_options():
         st.session_state.analysis_plot_type = plot_type
 
         # toggle overlay of datapoints in the plots
-        overlay_points = st.toggle(
-            "Overlay individual datapoints",
+        overlay_points = inner_col2.toggle(
+            "Overlay datapoints",
             value=st.session_state.get("overlay_datapoints", False),
             key="overlay_datapoints",
         )
 
         with st.popover(label="Descriptor Information", use_container_width=True):
             shape_metric_help()
+
+    if col1.button("Generate Plots", use_container_width=True, type="primary"):
+        render_plotting_main()
 
     with col2:
         # build the analysis dataframe
@@ -53,7 +57,7 @@ def render_plotting_options():
             label for label in default_labels if label in label_options
         ] or label_options
         st.multiselect(
-            "Include these classes in the plots",
+            "Choose classes to compare",
             options=label_options,
             default=default_labels,
             key="analysis_labels",
@@ -69,14 +73,14 @@ def render_plotting_options():
         ] or metric_options
 
         st.multiselect(
-            "Plot these descriptors",
+            "Choose cell descriptors to compare",
             options=metric_options,
             default="area",
             key="analysis_metrics",
         )
 
     # render the download button for cell metrics
-    st.download_button(
+    col1.download_button(
         "Download table of cell descriptors",
         data=build_cell_metrics_csv(
             tuple(st.session_state.get("analysis_labels") or ())

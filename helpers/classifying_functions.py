@@ -222,7 +222,7 @@ def create_row(name: str, key: str, mode_ns: str = "side"):
     Create a single class selection row with color chip, name, count, and buttons.
     """
     # icon | name | click-assign | assign-all |
-    c1, c2, c3, c4 = st.columns([1, 5, 2, 4])
+    c1, c2, c3, c4 = st.columns([1, 5, 3, 3])
     c1.markdown(color_chip_md(color_hex_for(name)), unsafe_allow_html=True)
     c2.write(f"**{name}**")
 
@@ -289,16 +289,6 @@ def classify_actions_fragment():
         label == "No label" for label in st.session_state["densenet_class_map"].values()
     )
 
-    # Show warning if a classifier is loaded but all labels are "No label"
-    if not st.session_state["densenet_model"] == None:
-
-        if needs_mapping:
-            st.toast(
-                "All densenet model predictions are currently mapped to 'No label'. "
-                "Please assign at least one label under 'Classify Cells with Densenet'.",
-                duration="infinite",
-            )
-
     rec = get_current_rec()
 
     # buttons to classify masks in current image or batch classify all images
@@ -307,7 +297,7 @@ def classify_actions_fragment():
         help = densenet_help(st.session_state["densenet_model"] == None, needs_mapping)
         # classify masks in the current image
         if st.button(
-            "Classify cells",
+            "Classify",
             use_container_width=True,
             help=help,
             disabled=(st.session_state["densenet_model"] == None) or needs_mapping,
@@ -317,7 +307,7 @@ def classify_actions_fragment():
     with col2:
         # batch classify masks in all images
         if st.button(
-            "Batch classify cells",
+            "Batch classify",
             key="btn_batch_classify_cellpose",
             use_container_width=True,
             help=help,
@@ -378,15 +368,11 @@ def class_manage_fragment(key_ns="side"):
     if pending_val is not None:
         ss[f"{key_ns}_rename_from"] = pending_val
 
-    st.markdown("### Add or remove classes")
-
-    st.caption("Add new classes, delete existing classes, or rename classes.")
-
     # add new class by typing in the text box
     st.text_input(
-        "",
+        "Add a new class:",
         key="side_new_label",
-        placeholder="Enter a new class here",
+        placeholder="New class name",
         on_change=add_label_from_input(labels, ss.get("side_new_label", "")),
     )
 
@@ -394,11 +380,11 @@ def class_manage_fragment(key_ns="side"):
     editable = [c for c in labels if c != "No label"]
     if editable:
         del_class = st.selectbox(
-            "Select class to delete",
-            options=["(Select a class)"] + editable,
+            "Delete a class:",
+            options=["Select a class"] + editable,
             key=f"{key_ns}_delete_label",
         )
-        if del_class != "(Select a class)":
+        if del_class != "Select a class":
             remove_class_everywhere(del_class)
             st.success(f"Deleted class: {del_class}")
             st.rerun()
@@ -409,12 +395,12 @@ def class_manage_fragment(key_ns="side"):
     # rename class by selecting from dropdown and typing new name
     c1, c2 = st.columns([1, 2])
     with c1:
-        st.selectbox("Class to relabel", options=editable, key=f"{key_ns}_rename_from")
+        st.selectbox("Rename:", options=editable, key=f"{key_ns}_rename_from")
     with c2:
         st.text_input(
-            "New label",
+            "To:",
             key=f"{key_ns}_rename_to",
-            placeholder="Type new class name here",
+            placeholder="New name",
             on_change=lambda: rename_class_from_input(
                 f"{key_ns}_rename_from", f"{key_ns}_rename_to"
             ),

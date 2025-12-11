@@ -137,8 +137,15 @@ def create_image_display(rec, scale):
         palette = create_colour_palette(labels)
         classes_map = classes_map_from_labels(rec["masks"], rec["labels"])
 
+        # just shows masks over black background
+        if not st.session_state.get("show_image", True):
+            background = np.zeros((rec["H"], rec["W"], 3), dtype=np.uint8)
+
+        else:
+            background = rec["image"]
+
         base_img = cached_image_mask_overlay(
-            rec["image"], rec["masks"], classes_map, palette, alpha=0.35
+            background, rec["masks"], classes_map, palette, alpha=0.35
         )
     else:
         base_img = rec["image"]
@@ -435,7 +442,6 @@ def assign_clicked():
 @st.fragment
 def render_cellpose_hyperparameters_fragment():
     """Render Cellpose hyperparameters editing fragment."""
-
     # Channel 1
     st.number_input(
         "Channel 1",

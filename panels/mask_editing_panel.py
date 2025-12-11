@@ -16,6 +16,8 @@ from helpers.classifying_functions import (
 from helpers.cellpose_functions import (
     segment_current_and_refresh,
     batch_segment_and_refresh,
+    segment_current_and_refresh_cellpose_sam,
+    batch_segment_current_and_refresh_cellpose_sam,
 )
 
 from helpers.upload_download_functions import (
@@ -31,38 +33,61 @@ def render_segment_sidebar(*, key_ns: str = "side"):
 
         # render cellpose controls
         with st.popover(
-            "Segment cells with Cellpose",
-            disabled=st.session_state["cellpose_model_bytes"] == None,
+            "Predict masks for image",
             use_container_width=True,
             help="Segment cells using the loaded Cellpose model.",
             type="primary",
         ):
 
-            col1, col2 = st.columns([1, 1])
-
-            with col1:
-
-                if st.button(
-                    "Generate masks",
-                    use_container_width=True,
-                    key="segment_image",
-                    help="Segment this image with Cellpose.",
-                    disabled=st.session_state["cellpose_model_bytes"] == None,
-                ):
-                    segment_current_and_refresh()
-            with col2:
-                if st.button(
-                    "Batch generate masks",
-                    use_container_width=True,
-                    key="batch_segment_image",
-                    help="Segment all uploaded images with Cellpose.",
-                    disabled=st.session_state["cellpose_model_bytes"] == None,
-                ):
-                    batch_segment_and_refresh()
-
-            st.caption(
-                "If needed, you can alter Cellpose hyperparameters before segmenting:"
+            model_family = st.selectbox(
+                "Select model", ["Cellpose4", "Fine-tuned Model"]
             )
+
+            col1, col2 = st.columns(2)
+
+            if model_family == "Cellpose4":
+
+                with col1:
+
+                    if st.button(
+                        "Generate",
+                        use_container_width=True,
+                        key="segment_image_SAM",
+                    ):
+                        segment_current_and_refresh_cellpose_sam()
+
+                with col2:
+                    if st.button(
+                        "Batch generate",
+                        use_container_width=True,
+                        key="batch_segment_image_sam",
+                        help="Segment all uploaded images with Cellpose.",
+                    ):
+                        batch_segment_current_and_refresh_cellpose_sam()
+
+            else:
+
+                with col1:
+
+                    if st.button(
+                        "Generate",
+                        use_container_width=True,
+                        key="segment_image",
+                        help="Segment this image with Cellpose.",
+                        disabled=st.session_state["cellpose_model_bytes"] == None,
+                    ):
+                        segment_current_and_refresh()
+                with col2:
+                    if st.button(
+                        "Batch generate",
+                        use_container_width=True,
+                        key="batch_segment_image",
+                        help="Segment all uploaded images with Cellpose.",
+                        disabled=st.session_state["cellpose_model_bytes"] == None,
+                    ):
+                        batch_segment_and_refresh()
+
+            st.caption("Change hyperparameters to increase accuracy:")
 
             with st.expander(
                 "Cellpose hyperparameters",
@@ -71,7 +96,7 @@ def render_segment_sidebar(*, key_ns: str = "side"):
 
         # render SAM2 controls
         with st.popover(
-            "Segment cells with SAM2",
+            "Predict masks from boxes",
             use_container_width=True,
             help="Draw boxes and click segment to use SAM2 to segment individual cells.",
             type="primary",
@@ -119,18 +144,17 @@ def render_download_button():
         with st.popover(
             label="Download options", use_container_width=True, type="primary"
         ):
-            c1, c2 = st.columns(2)
-            include_overlay = c1.checkbox(
+            include_overlay = st.checkbox(
                 "Include colored mask overlays", True, key="dl_include_overlay"
             )
-            include_counts = c2.checkbox(
+            include_counts = st.checkbox(
                 "Overlay per-image class counts", False, key="dl_include_counts"
             )
-            c1.checkbox(
+            st.checkbox(
                 "Normalize downloaded images", False, key="dl_normalize_download"
             )
 
-            include_patches = c2.checkbox(
+            include_patches = st.checkbox(
                 "Include cell patch images", False, key="dl_include_patches"
             )
 
@@ -155,7 +179,7 @@ def render_download_button():
                     include_summary,
                 )
                 st.download_button(
-                    "Download dataset (zip)",
+                    "Download dataset",
                     mz,
                     "masks_and_images.zip",
                     "application/zip",
