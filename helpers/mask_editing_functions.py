@@ -531,7 +531,7 @@ def render_box_tools_fragment(key_ns="side"):
     # button to set mode to draw boxes on the image
     if c1.button(
         "Draw box",
-        use_container_width=True,
+        width='stretch',
         key=f"{key_ns}_draw_boxes",
         help="Click and drag boxes around cells",
     ):
@@ -540,7 +540,7 @@ def render_box_tools_fragment(key_ns="side"):
     # button to clear all boxes from the current image
     if c2.button(
         "Clear boxes",
-        use_container_width=True,
+        width='stretch',
         key="clear_boxes_button",
         help="Remove all boxes",
     ):
@@ -549,7 +549,7 @@ def render_box_tools_fragment(key_ns="side"):
     # button to segment with SAM2 the current boxes
     if st.button(
         "Generate masks from boxes",
-        use_container_width=True,
+        width='stretch',
         key=f"{key_ns}_predict",
         help="Use SAM2 to segment cells in boxes",
     ):
@@ -572,7 +572,7 @@ def render_mask_tools_fragment(key_ns="side"):
     # button to set mode to draw masks on the image
     if c1.button(
         "Draw mask",
-        use_container_width=True,
+        width='stretch',
         key=f"{key_ns}_draw_masks",
         help="Click and hold to draw masks",
     ):
@@ -582,7 +582,7 @@ def render_mask_tools_fragment(key_ns="side"):
     # button to set mode to remove masks by clicking on them
     if c2.button(
         "Remove mask",
-        use_container_width=True,
+        width='stretch',
         key=f"{key_ns}_remove_masks",
         help="Click masks to remove them",
     ):
@@ -595,7 +595,7 @@ def render_mask_tools_fragment(key_ns="side"):
     # button to clear all masks from the current image
     if c1.button(
         "Clear masks",
-        use_container_width=True,
+        width='stretch',
         key=f"{key_ns}_clear_masks",
         help="Remove all masks from image",
     ):
@@ -608,7 +608,7 @@ def render_mask_tools_fragment(key_ns="side"):
     # button to remove the last added mask
     if c2.button(
         "Undo mask",
-        use_container_width=True,
+        width='stretch',
         key=f"{key_ns}_undo_mask",
         help="Remove last mask",
     ):

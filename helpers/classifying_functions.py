@@ -241,7 +241,7 @@ def create_row(name: str, key: str, mode_ns: str = "side"):
     c3.button(
         "All",
         key=f"{key}_assign_all",
-        use_container_width=True,
+        width='stretch',
         on_click=_assign_all,
         help="Set all masks in this image to this class",
     )
@@ -250,7 +250,7 @@ def create_row(name: str, key: str, mode_ns: str = "side"):
     c4.button(
         "Click",
         key=f"{key}_select",
-        use_container_width=True,
+        width='stretch',
         on_click=_select,
         help="Click masks to label cells",
     )
@@ -298,7 +298,7 @@ def classify_actions_fragment():
         # classify masks in the current image
         if st.button(
             "Classify",
-            use_container_width=True,
+            width='stretch',
             help=help,
             disabled=(st.session_state["densenet_model"] == None) or needs_mapping,
         ):
@@ -309,7 +309,7 @@ def classify_actions_fragment():
         if st.button(
             "Batch classify",
             key="btn_batch_classify_cellpose",
-            use_container_width=True,
+            width='stretch',
             help=help,
             disabled=st.session_state["densenet_model"] == None or needs_mapping,
         ):

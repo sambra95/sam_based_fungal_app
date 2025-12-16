@@ -47,7 +47,7 @@ with col1:
             nav_col1, nav_col2, nav_col3 = st.columns([1, 4, 1])
 
             with nav_col1:
-                if st.button("◀", use_container_width=True):
+                if st.button("◀", width='stretch'):
                     # move slider one step back, then update current image
                     st.session_state.slider_jump = max(
                         1, st.session_state.slider_jump - 1
@@ -56,7 +56,7 @@ with col1:
                     st.rerun()
 
             with nav_col3:
-                if st.button("▶", use_container_width=True):
+                if st.button("▶", width='stretch'):
                     # move slider one step forward, then update current image
                     st.session_state.slider_jump = min(
                         len(ok), st.session_state.slider_jump + 1

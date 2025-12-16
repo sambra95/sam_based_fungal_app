@@ -35,10 +35,10 @@ def render_plotting_options():
             key="overlay_datapoints",
         )
 
-        with st.popover(label="Descriptor Information", use_container_width=True):
+        with st.popover(label="Descriptor Information", width='stretch'):
             shape_metric_help()
 
-    if col1.button("Generate Plots", use_container_width=True, type="primary"):
+    if col1.button("Generate Plots", width='stretch', type="primary"):
         render_plotting_main()
 
     with col2:
@@ -87,7 +87,7 @@ def render_plotting_options():
         ),
         file_name="cell_metrics.csv",
         mime="text/csv",
-        use_container_width=True,
+        width='stretch',
         key="dl_cell_metrics_csv",
         type="primary",
     )
@@ -122,5 +122,5 @@ def render_plotting_main():
     for col in metrics:
         fname, fig = (plot_violin if ptype == "Violin" else plot_bar)(df_filt, col)
         st.header(fname)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         st.session_state[fname] = fig

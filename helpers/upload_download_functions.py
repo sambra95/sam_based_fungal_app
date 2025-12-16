@@ -34,10 +34,6 @@ ss = st.session_state
 # --------------------------------------
 
 from pathlib import Path
-from tensorflow.keras.models import (
-    load_model,
-    Model,
-)  # you already import these in render_main
 import io
 
 ss = st.session_state
@@ -92,6 +88,26 @@ def load_demo_data():
     skipped = process_uploads(file_objs, DEMO_MASK_SUFFIX) or []
     ss["skipped_files"] = skipped
 
+    #TODO: FIX, INJECT DUMMY LABELS FOR DEMO TRAINING
+    demo_classes = ["Demo Class A", "Demo Class B"]
+    ss["all_classes"] = ["No label"] + demo_classes
+    
+    rng = np.random.default_rng(42)
+    
+    for k in ordered_keys():
+        rec = ss.images[k]
+        masks = rec.get("masks")
+        if masks is None: continue
+        
+        cell_ids = [i for i in np.unique(masks) if i != 0]
+        
+        new_labels = {}
+        for cid in cell_ids:
+            lbl = demo_classes[cid % 2] 
+            new_labels[cid] = lbl
+            
+        rec["labels"] = new_labels
+    
     # close the file handles now that everything is loaded
     for f in file_objs:
         try:
@@ -106,23 +122,29 @@ def load_demo_data():
         ss["cellpose_model_name"] = cellpose_path.name
 
     # ---------- load Densenet model from disk ----------
-    densenet_path = demo_root / "densenet_demo.keras"
+    densenet_path = demo_root / "densenet_demo.pth"
     if densenet_path.exists():
-        data = densenet_path.read_bytes()
-        ext = densenet_path.suffix.lower() or ".keras"
-        h = hashlib.sha1(data).hexdigest()[:12]
-        tmp_path = os.path.join(tempfile.gettempdir(), f"densenet_{h}{ext}")
-        if not os.path.exists(tmp_path):
-            with open(tmp_path, "wb") as f:
-                f.write(data)
+        import torch
+        from helpers.densenet_functions import build_densenet
 
-        model = load_model(tmp_path, compile=False, safe_mode=False)
-        if isinstance(model.outputs, (list, tuple)) and len(model.outputs) > 1:
-            model = Model(model.inputs, model.outputs[0])  # single-output wrapper
+        try:
+            state_dict = torch.load(densenet_path, map_location="cpu")
+            
+            num_classes = 2
+            if "classifier.2.weight" in state_dict:
+                num_classes = state_dict["classifier.2.weight"].shape[0]
+            elif "classifier.weight" in state_dict:
+                 num_classes = state_dict["classifier.weight"].shape[0]
 
-        ss["densenet_model"] = model
-        ss["densenet_model_path"] = tmp_path
-        ss["densenet_ckpt_name"] = densenet_path.name
+            model = build_densenet(num_classes=num_classes)
+            model.load_state_dict(state_dict)
+            model.eval()
+
+            ss["densenet_model"] = model
+            ss["densenet_model_path"] = str(densenet_path)
+            ss["densenet_ckpt_name"] = densenet_path.name
+        except Exception as e:
+            st.warning(f"Could not load demo DenseNet model: {e}")
 
     # ---------- notify + refresh UI ----------
     st.toast("Demo data loaded.")
@@ -284,12 +306,12 @@ def render_images_form():
             pd.DataFrame(rows, index=ok),
             hide_index=True,
             height=580,
-            use_container_width=True,
+            width='stretch',
             column_config={"Remove": st.column_config.CheckboxColumn()},
             disabled=["Image", "Masks Present", "Number of Masks", "Number of Labels"],
         )
         # handle removals
-        if st.form_submit_button("Remove selected images", use_container_width=True):
+        if st.form_submit_button("Remove selected images", width='stretch'):
             for k in edited.loc[edited["Remove"]].index:
                 ss.images.pop(k, None)
             ks = sorted(ss.images)

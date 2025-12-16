@@ -39,7 +39,7 @@ def cellpose_training_plot_help():
 
             st.image(
                 DIAGRAM_DIR / "train_test_loss.svg",
-                use_container_width=True,
+                width='stretch',
             )
 
         # --- IoU Comparison ---
@@ -65,7 +65,7 @@ def cellpose_training_plot_help():
 
             st.image(
                 DIAGRAM_DIR / "iou.svg",
-                use_container_width=True,
+                width='stretch',
             )
 
         # --- Predicted vs Real Counts ---
@@ -91,7 +91,7 @@ def cellpose_training_plot_help():
 
             st.image(
                 DIAGRAM_DIR / "counts.svg",
-                use_container_width=True,
+                width='stretch',
             )
 
 
@@ -128,7 +128,7 @@ def classifier_training_plot_help():
 
             st.image(
                 DIAGRAM_DIR / "train_test_loss.svg",
-                use_container_width=True,
+                width='stretch',
             )
 
         # --- Accuracy, Precision, and F1 Scores ---
@@ -162,7 +162,7 @@ def classifier_training_plot_help():
 
             st.image(
                 DIAGRAM_DIR / "acc_prec_f1.svg",
-                use_container_width=True,
+                width='stretch',
             )
 
         # --- Confusion Matrix ---
@@ -189,7 +189,7 @@ def classifier_training_plot_help():
 
             st.image(
                 DIAGRAM_DIR / "confusion_matrix.svg",
-                use_container_width=True,
+                width='stretch',
             )
 
 
@@ -220,7 +220,7 @@ def shape_metric_help():
     with col2:
         st.image(
             DIAGRAM_DIR / "plot_download.svg",
-            use_container_width=True,
+            width='stretch',
         )
 
     # --- Textual definitions -------------------------------------------------
@@ -306,7 +306,7 @@ def shape_metric_help():
             if m["Name"] == "circularity / compactness / roundness":
                 st.image(
                     DIAGRAM_DIR / "circularity_compactness_roundness.svg",
-                    use_container_width=True,
+                    width='stretch',
                 )
 
                 st.caption(
@@ -316,7 +316,7 @@ def shape_metric_help():
                 )
 
             if m["Name"] == "major / minor axis lengths":
-                st.image(DIAGRAM_DIR / "axes.svg", use_container_width=True)
+                st.image(DIAGRAM_DIR / "axes.svg", width='stretch')
 
                 st.caption(
                     "The major axis is the longest diameter of the best-fit ellipse; "
@@ -327,7 +327,7 @@ def shape_metric_help():
             if m["Name"] == "aspect ratio / elongation / eccentricity":
                 st.image(
                     DIAGRAM_DIR / "elongation_eccentricity_aspect_ratio.svg",
-                    use_container_width=True,
+                    width='stretch',
                 )
 
                 st.caption(
@@ -337,7 +337,7 @@ def shape_metric_help():
                 )
 
             if m["Name"] == "solidity":
-                st.image(DIAGRAM_DIR / "solidity.svg", use_container_width=True)
+                st.image(DIAGRAM_DIR / "solidity.svg", width='stretch')
 
                 st.caption(
                     "Solidity = area / convex_area. A convex shape matches its convex hull (solidity ≈ 1). "
@@ -345,7 +345,7 @@ def shape_metric_help():
                 )
 
             if m["Name"] in ["extent"]:
-                st.image(DIAGRAM_DIR / "extent.svg", use_container_width=True)
+                st.image(DIAGRAM_DIR / "extent.svg", width='stretch')
 
                 st.caption(
                     "Extent measures how much of the bounding box area the object occupies. "

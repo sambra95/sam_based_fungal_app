@@ -34,7 +34,7 @@ def render_segment_sidebar(*, key_ns: str = "side"):
         # render cellpose controls
         with st.popover(
             "Predict masks for image",
-            use_container_width=True,
+            width='stretch',
             help="Segment cells using the loaded Cellpose model.",
             type="primary",
         ):
@@ -51,7 +51,7 @@ def render_segment_sidebar(*, key_ns: str = "side"):
 
                     if st.button(
                         "Generate",
-                        use_container_width=True,
+                        width='stretch',
                         key="segment_image_SAM",
                     ):
                         segment_current_and_refresh_cellpose_sam()
@@ -59,7 +59,7 @@ def render_segment_sidebar(*, key_ns: str = "side"):
                 with col2:
                     if st.button(
                         "Batch generate",
-                        use_container_width=True,
+                        width='stretch',
                         key="batch_segment_image_sam",
                         help="Segment all uploaded images with Cellpose.",
                     ):
@@ -71,7 +71,7 @@ def render_segment_sidebar(*, key_ns: str = "side"):
 
                     if st.button(
                         "Generate",
-                        use_container_width=True,
+                        width='stretch',
                         key="segment_image",
                         help="Segment this image with Cellpose.",
                         disabled=st.session_state["cellpose_model_bytes"] == None,
@@ -80,7 +80,7 @@ def render_segment_sidebar(*, key_ns: str = "side"):
                 with col2:
                     if st.button(
                         "Batch generate",
-                        use_container_width=True,
+                        width='stretch',
                         key="batch_segment_image",
                         help="Segment all uploaded images with Cellpose.",
                         disabled=st.session_state["cellpose_model_bytes"] == None,
@@ -97,7 +97,7 @@ def render_segment_sidebar(*, key_ns: str = "side"):
         # render SAM2 controls
         with st.popover(
             "Predict masks from boxes",
-            use_container_width=True,
+            width='stretch',
             help="Draw boxes and click segment to use SAM2 to segment individual cells.",
             type="primary",
         ):
@@ -113,13 +113,13 @@ def render_classify_sidebar(*, key_ns: str = "side"):
         st.markdown("### Classification controls:")
 
         with st.popover(
-            label="Manage Labels", use_container_width=True, type="primary"
+            label="Manage Labels", width='stretch', type="primary"
         ):
             class_manage_fragment(key_ns)  # add/delete/rename
 
         # Action buttons to classify cells with Densenet
         with st.popover(
-            "Classify cells with Densenet", use_container_width=True, type="primary"
+            "Classify cells with Densenet", width='stretch', type="primary"
         ):
 
             classify_actions_fragment()
@@ -142,7 +142,7 @@ def render_download_button():
 
     with st.container(border=True):
         with st.popover(
-            label="Download options", use_container_width=True, type="primary"
+            label="Download options", width='stretch', type="primary"
         ):
             include_overlay = st.checkbox(
                 "Include colored mask overlays", True, key="dl_include_overlay"
@@ -167,7 +167,7 @@ def render_download_button():
             # 🔹 Only build the dataset when the user actually clicks the button
             if st.button(
                 "Prepare annotated images for download",
-                use_container_width=True,
+                width='stretch',
                 type="primary",
             ):
                 mz = build_masks_images_zip(
@@ -183,6 +183,6 @@ def render_download_button():
                     mz,
                     "masks_and_images.zip",
                     "application/zip",
-                    use_container_width=True,
+                    width='stretch',
                     type="primary",
                 )

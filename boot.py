@@ -4,15 +4,8 @@ import streamlit as st
 
 @st.cache_resource(show_spinner=False)
 def configure_tf_cpu_only():
-    import tensorflow as tf
-
-    try:
-        tf.config.set_visible_devices([], "GPU")
-    except Exception:
-        pass
-    tf.config.threading.set_intra_op_parallelism_threads(1)
-    tf.config.threading.set_inter_op_parallelism_threads(1)
-    return True
+    # Deprecated, removed tf from dependencies
+    pass
 
 
 def common_boot():

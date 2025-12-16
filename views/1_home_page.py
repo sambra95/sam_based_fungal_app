@@ -95,10 +95,10 @@ with col1:
 
         # then buttons (visually below text, but still inside bordered container)
         col_a, col_b = st.columns(2)
-        if col_a.button("⟵ Prev", use_container_width=True):
+        if col_a.button("⟵ Prev", width='stretch'):
             st.session_state.idx = prev_index(st.session_state.idx, len(files))
             st.rerun()
-        if col_b.button("Next ⟶", use_container_width=True):
+        if col_b.button("Next ⟶", width='stretch'):
             st.session_state.idx = next_index(st.session_state.idx, len(files))
             st.rerun()
 

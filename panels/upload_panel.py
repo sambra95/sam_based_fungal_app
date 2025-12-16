@@ -79,7 +79,7 @@ def render_main():
             st.info(f"Loaded model: {cellpose_model}")
 
             # button to remove the currently loaded model
-            if st.button("Clear Cellpose model", use_container_width=True):
+            if st.button("Clear Cellpose model", width='stretch'):
                 ss["cellpose_model_bytes"] = None
                 ss["cellpose_model_name"] = None
                 ss["train_losses"] = []
@@ -92,27 +92,37 @@ def render_main():
             densenet_file = st.file_uploader(
                 " ",
                 type=[
-                    "keras",
-                ],  # Keras formats only; torch files won't work with load_model
+                    "pth", "pt"
+                ],  #PyTorch formats instead
                 key="upload_densenet_ckpt",
                 help="Uploading a Densenet121 model is optional.",
             )
             if densenet_file is not None:
-                from tensorflow.keras.models import load_model, Model
-
                 data = densenet_file.read()
-                ext = os.path.splitext(densenet_file.name)[1].lower() or ".keras"
+                ext = os.path.splitext(densenet_file.name)[1].lower() or ".pth"
                 h = hashlib.sha1(data).hexdigest()[:12]
                 path = os.path.join(tempfile.gettempdir(), f"densenet_{h}{ext}")
                 if not os.path.exists(path):
                     with open(path, "wb") as f:
                         f.write(data)
 
-                model = load_model(path, compile=False, safe_mode=False)
-                if isinstance(model.outputs, (list, tuple)) and len(model.outputs) > 1:
-                    model = Model(
-                        model.inputs, model.outputs[0]
-                    )  # single-output wrapper
+                import torch
+                from helpers.densenet_functions import build_densenet
+                
+                try:
+                    state_dict = torch.load(path, map_location="cpu")
+                    num_classes = 2 #TODO FIX
+                    if "classifier.2.weight" in state_dict:
+                        num_classes = state_dict["classifier.2.weight"].shape[0]
+                    
+                    model = build_densenet(num_classes=num_classes)
+                    model.load_state_dict(state_dict)
+                    model.eval()
+                    
+                except Exception as e:
+                    st.error(f"Failed to load PyTorch model: {e}")
+                    model = None
+
 
                 ss["densenet_model"] = model
                 ss["densenet_model_path"] = path
@@ -123,7 +133,7 @@ def render_main():
             st.info(f"Loaded model: {densenet_model}")
 
             # button to remove the currently loaded model
-            if st.button("Clear DenseNet-121 model", use_container_width=True):
+            if st.button("Clear DenseNet-121 model", width='stretch'):
                 ss["densenet_model"] = None
                 ss["densenet_ckpt_name"] = None
 

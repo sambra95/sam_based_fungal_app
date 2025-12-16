@@ -86,7 +86,7 @@ def render_densenet_summary_fragment():
     # Pretty, form-like card with rounded edges
     st.dataframe(
         freq_df,
-        use_container_width=True,
+        width='stretch',
         hide_index=True,
         column_config={
             "Class": st.column_config.TextColumn("Class"),
@@ -133,7 +133,7 @@ def render_densenet_train_fragment():
     # Disable button if we don't have enough data
     go = st.button(
         "Fine tune Densenet121",
-        use_container_width=True,
+        width='stretch',
         type="primary",
         disabled=not can_train,
     )
@@ -146,15 +146,17 @@ def render_densenet_train_fragment():
     with st.spinner(
         "Fine-tuning Densenet. Grab a coffee! Clicking elsewhere within the app now will interrupt training..."
     ):
-        history, val_gen, classes = finetune_densenet(
+        history, val_loader, classes = finetune_densenet(
             input_size=input_size,
             batch_size=batch_size,
             epochs=epochs,
             val_split=val_split,
         )
 
-        # evaluate the fine tuned densenet model on validation dataset
-        evaluate_fine_tuned_densenet(history=history, val_gen=val_gen, classes=classes)
+        if history is not None:
+             # evaluate the fine tuned densenet model on validation dataset
+             evaluate_fine_tuned_densenet(history=history, val_loader=val_loader, classes=classes)
+
 
         ss["dn_zip_bytes"] = build_densenet_zip_bytes(input_size)
 
@@ -179,17 +181,17 @@ def show_densenet_training_plots():
         with col1:
             st.plotly_chart(
                 st.session_state["densenet_training_losses"],
-                use_container_width=True,
+                width='stretch',
             )
         with col2:
             st.plotly_chart(
                 st.session_state["densenet_training_metrics"],
-                use_container_width=True,
+                width='stretch',
             )
 
         st.plotly_chart(
             st.session_state["densenet_confusion_matrix"],
-            use_container_width=True,
+            width='stretch',
         )
 
         st.download_button(
@@ -197,7 +199,7 @@ def show_densenet_training_plots():
             data=ss["dn_zip_bytes"],
             file_name="densenet_training.zip",
             mime="application/zip",
-            use_container_width=True,
+            width='stretch',
             type="primary",
         )
 
@@ -510,7 +512,7 @@ def validate_and_compare(images, masks, channels):
 
 def render_cellpose_train_fragment():
     """Runs the full Cellpose fine-tuning pipeline when the button is clicked."""
-    go = st.button("Fine-tune Cellpose", use_container_width=True, type="primary")
+    go = st.button("Fine-tune Cellpose", width='stretch', type="primary")
     if not go:
         return
 
@@ -543,13 +545,13 @@ def show_cellpose_training_plots():
             # plot training losses
             st.plotly_chart(
                 st.session_state["cellpose_training_losses"],
-                use_container_width=True,
+                width='stretch',
             )
 
             # plot original vs predicted counts
             st.plotly_chart(
                 st.session_state["cellpose_original_counts_comparison"],
-                use_container_width=True,
+                width='stretch',
             )
 
         with col2:
@@ -557,13 +559,13 @@ def show_cellpose_training_plots():
             # plot iou comparison
             st.plotly_chart(
                 st.session_state["cellpose_iou_comparison"],
-                use_container_width=True,
+                width='stretch',
             )
 
             # plot tuned vs predicted counts
             st.plotly_chart(
                 st.session_state["cellpose_tuned_counts_comparison"],
-                use_container_width=True,
+                width='stretch',
             )
 
         # display grid search results if applicable
@@ -571,7 +573,7 @@ def show_cellpose_training_plots():
             st.dataframe(
                 st.session_state["cp_grid_results_df"],
                 hide_index=True,
-                use_container_width=True,
+                width='stretch',
             )
 
         else:
@@ -583,6 +585,6 @@ def show_cellpose_training_plots():
             data=ss["cp_zip_bytes"],
             file_name="cellpose_training.zip",
             mime="application/zip",
-            use_container_width=True,
+            width='stretch',
             type="primary",
         )

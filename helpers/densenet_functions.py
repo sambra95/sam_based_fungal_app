@@ -1,4 +1,4 @@
-# panels/train_densenet.py
+# helpers/densenet_functions.py
 import random
 import numpy as np
 import streamlit as st
@@ -9,22 +9,20 @@ import io
 from zipfile import ZipFile, ZIP_DEFLATED
 import os
 import tempfile
-import plotly.io as pio
 import plotly.graph_objects as go
 
-from tensorflow.keras.utils import Sequence
-from tensorflow.keras import layers, models
-from tensorflow.keras.applications import DenseNet121
-from tensorflow.keras.optimizers import Adam
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
+from torchvision import models, transforms
 from sklearn.model_selection import train_test_split
 from sklearn.utils.class_weight import compute_class_weight
-from tensorflow.keras.callbacks import EarlyStopping
 from sklearn.metrics import (
     accuracy_score,
     precision_recall_fscore_support,
     confusion_matrix,
 )
-
 
 # ---- bring in existing app helpers ----
 from helpers.state_ops import ordered_keys
@@ -33,13 +31,21 @@ from helpers.cellpose_functions import normalize_image, add_plotly_as_png_to_zip
 ss = st.session_state
 
 # -------------------------------
+#  Device Configuration
+# -------------------------------
+def get_device():
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+# -------------------------------
 #  Preprocessing and loader functions
 # -------------------------------
 
-
 def generate_cell_patch(image: np.ndarray, mask: np.ndarray, patch_size: int = 64):
     """takes an image and boolean mask input and a normalized square patch image from the mask"""
-
     # extract bounding box crop
     im, m = np.asarray(image), np.asarray(mask, bool)
 
@@ -52,13 +58,10 @@ def generate_cell_patch(image: np.ndarray, mask: np.ndarray, patch_size: int = 6
     # checks to make sure crop is the correct format
     if crop.ndim == 2:
         crop = np.stack([crop] * 3, axis=-1)
-    # convert to RGB if needed
     elif crop.ndim == 3 and crop.shape[2] == 4:
         crop = cv2.cvtColor(crop, cv2.COLOR_RGBA2RGB)
-    # convert BGR to RGB if needed
     elif crop.ndim == 3 and crop.shape[2] == 3:
         crop = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-    # drop extra channels if needed
     else:
         crop = crop[..., :3]
 
@@ -69,7 +72,6 @@ def generate_cell_patch(image: np.ndarray, mask: np.ndarray, patch_size: int = 6
 
 def resize_with_aspect_ratio(img: np.ndarray, patch_size=64) -> np.ndarray:
     """resizes input image to a square with 'patch_size' height while maintaining the aspect ratio"""
-
     th, tw = patch_size, patch_size
     h, w = img.shape[:2]
 
@@ -85,7 +87,6 @@ def resize_with_aspect_ratio(img: np.ndarray, patch_size=64) -> np.ndarray:
         canvas = np.zeros((th, tw), dtype=img.dtype)
         y0, x0 = (th - nh) // 2, (tw - nw) // 2
         canvas[y0 : y0 + nh, x0 : x0 + nw] = resized
-    # 3-channel case
     else:
         c = img.shape[2]
         canvas = np.zeros((th, tw, c), dtype=img.dtype)
@@ -97,13 +98,10 @@ def resize_with_aspect_ratio(img: np.ndarray, patch_size=64) -> np.ndarray:
 
 def generate_patches_with_ids(rec, patch_size=64):
     """returns list of cell patches and patch ids from input record"""
-
     M = rec.get("masks")
-
     # extract the individual masks
     ids = [int(v) for v in np.unique(M) if v != 0]
 
-    # generate patches
     patches, keep_ids = [], []
     for iid in ids:
         patches.append(
@@ -117,29 +115,24 @@ def generate_patches_with_ids(rec, patch_size=64):
 
 
 # -------------------------------
-#  Model inference on patch
+#  Model Helper functions
 # -------------------------------
-
-# somewhere near the top of classify_cells.py
-
 
 def get_densenet_num_classes(model) -> int | None:
     """Infer number of output classes from the DenseNet model."""
     if model is None:
         return None
     try:
-        # Keras-style model
-        return int(model.output_shape[-1])
+        if isinstance(model.classifier, nn.Sequential):
+             last_layer = model.classifier[-1]
+             return last_layer.out_features
+        return model.classifier.out_features
     except Exception:
         return None
 
 
 def ensure_densenet_class_map() -> dict[int, str | None]:
-    """
-    Ensure we have a mapping for each model class index in session_state.
-
-    Returns a dict: {model_class_idx: label_name_or_None}
-    """
+    """Ensure we have a mapping for each model class index in session_state."""
     ss = st.session_state
     model = ss.get("densenet_model")
     n_classes = get_densenet_num_classes(model)
@@ -147,10 +140,9 @@ def ensure_densenet_class_map() -> dict[int, str | None]:
         return {}
 
     class_map = ss.setdefault("densenet_class_map", {})
-
     # Make sure there is a key for each model output index
     for idx in range(n_classes):
-        class_map.setdefault(idx, None)  # None means "not mapped / No label"
+        class_map.setdefault(idx, None)
     ss["densenet_class_map"] = class_map
     return class_map
 
@@ -159,20 +151,15 @@ def densenet_mapping_fragment():
     ss = st.session_state
     model = ss.get("densenet_model")
     if model is None:
-        return  # nothing to configure if model isn't loaded
+        return
 
     n_classes = get_densenet_num_classes(model)
-
-    # Make sure global classes list exists
     all_classes = ss.setdefault("all_classes", ["No label"])
     class_map = ensure_densenet_class_map()
 
     for idx in range(n_classes):
-
         current = class_map.get(idx)
-        options = all_classes  # existing labels, including 'No label'
-
-        # pick index in options (default to 'No label' if not mapped)
+        options = all_classes
         if current in options:
             default_idx = options.index(current)
         else:
@@ -184,48 +171,53 @@ def densenet_mapping_fragment():
             index=default_idx,
             key=f"densenet_map_{idx}",
         )
-
         class_map[idx] = selected
 
     ss["densenet_class_map"] = class_map
 
 
 def classify_cells_with_densenet(rec: dict) -> None:
-    """Classify segmented cell masks in `rec` using a DenseNet-121 model.
-    Mutates `rec` and session_state, then triggers a rerun on success.
-    """
+    """Classify segmented cell masks in `rec` using a DenseNet-121 model."""
     ss = st.session_state
     model = ss.get("densenet_model")
     M = rec.get("masks")
 
-    # exit if no masks for classification
-    if not np.any(M):
+    if not np.any(M) or model is None:
         return
 
-    # extract normalized cell patches and ids
+    device = get_device()
+    model.to(device)
+    model.eval()
+
     patches, keep_ids = generate_patches_with_ids(rec)
-    patches = [normalize_image(patch) for patch in patches]
 
-    X = np.stack(patches, axis=0)
-    preds = model.predict(X, verbose=0).argmax(axis=1)
+    patches_np = [normalize_image(patch) for patch in patches]
+    
+    X_list = []
+    for p in patches_np:
+        p_chw = np.transpose(p, (2, 0, 1))
+        X_list.append(torch.tensor(p_chw, dtype=torch.float32))
 
-    # get mapping: model class index -> app label name
+    if not X_list:
+        return
+
+    X_batch = torch.stack(X_list).to(device)
+    
+    with torch.no_grad():
+        outputs = model(X_batch)
+        preds = torch.argmax(outputs, dim=1).cpu().numpy()
+
     class_map = ensure_densenet_class_map()
     all_classes = ss.setdefault("all_classes", ["No label"])
-
     labels = rec.setdefault("labels", {})
 
     for iid, cls_idx in zip(keep_ids, preds):
         idx = int(cls_idx)
-
-        # look up mapped label; default to "No label" if not mapped
         name = class_map.get(idx)
         if not name:
             name = "No label"
-
         labels[int(iid)] = name
 
-        # make sure new non-reserved labels are added to all_classes
         if name and name != "No label" and name not in all_classes:
             all_classes.append(name)
 
@@ -233,144 +225,73 @@ def classify_cells_with_densenet(rec: dict) -> None:
 
 
 # -------------------------------
-#  Densenet121 training: Augementation
+#  Augmentation & Transforms
 # -------------------------------
 
-
-def geo_rotate(img, angle: int, keep_resolution: bool = True):
+def apply_random_augmentations(img_tensor):
     """
-    Rotate by `angle` degrees. If keep_resolution=True, expand canvas to fit the whole image.
-    Supports HxW or HxWxC (uint8 or float).
+    Apply random transforms on a (3, H, W) tensor.
+    Simple manual implementation to match previous logic logic or utilize Torchvision transforms.
+    Here we use torchvision transforms for simplicity and speed.
     """
-    h, w = img.shape[:2]
-    cX, cY = w / 2.0, h / 2.0
-    M = cv2.getRotationMatrix2D((cX, cY), angle, 1.0)
-
-    if keep_resolution:
-        # compute new bounds
-        cos = abs(M[0, 0])
-        sin = abs(M[0, 1])
-        nW = int(h * sin + w * cos)
-        nH = int(h * cos + w * sin)
-
-        # adjust translation
-        M[0, 2] += (nW / 2) - cX
-        M[1, 2] += (nH / 2) - cY
-
-        borderMode = cv2.BORDER_REFLECT_101
-        rotated = cv2.warpAffine(
-            img,
-            M,
-            (nW, nH),
-            flags=cv2.INTER_LINEAR,
-            borderMode=borderMode,
-        )
-    else:
-        rotated = cv2.warpAffine(
-            img,
-            M,
-            (w, h),
-            flags=cv2.INTER_LINEAR,
-            borderMode=cv2.BORDER_REFLECT_101,
-        )
-    return resize_with_aspect_ratio(rotated)
+    t = transforms.Compose([
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomVerticalFlip(),
+        transforms.RandomRotation(15),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2),
+        transforms.GaussianBlur(3, sigma=(0.1, 2.0)),
+    ])
+    return t(img_tensor)
 
 
-def kernel_blur(img, method: str, ksize=(3, 3), gaussian_sigma: float = 1.0):
-    """
-    Minimal shim matching your previous calls: only 'gaussian' is used.
-    """
-    if method != "gaussian":
-        raise ValueError("Only 'gaussian' blur is supported in this shim.")
-    kx, ky = ksize
-    kx = kx if kx % 2 == 1 else kx + 1
-    ky = ky if ky % 2 == 1 else ky + 1
-    return cv2.GaussianBlur(img, (kx, ky), sigmaX=gaussian_sigma)
+class CellDataset(Dataset):
+    def __init__(self, X, y, transform=None):
+        self.X = X  #expecting (N, H, W, C) numpy arrays 0..1 or 0..255
+        self.y = y
+        self.transform = transform
 
+    def __len__(self):
+        return len(self.X)
 
-def photo_bc(img, alpha: float = 1.0, beta: float = 0.0):
-    """
-    Brightness/contrast adjust:
-      out = alpha * img + beta
-    Works for uint8 or float; returns same dtype as input.
-    """
-    if img.dtype == np.uint8:
-        return cv2.convertScaleAbs(img, alpha=alpha, beta=beta)
-    # float path
-    out = img.astype(np.float32) * float(alpha) + float(beta)
-    if out.dtype != img.dtype:
-        out = out.astype(img.dtype)
-    return out
+    def __getitem__(self, idx):
+        img = self.X[idx]
+        img = np.transpose(img, (2, 0, 1)) #(3, 64, 64)
+        
 
+        tensor = torch.tensor(img, dtype=torch.float32)
+        
+        if tensor.max() > 1.0:
+            tensor = tensor / 255.0
 
-def random_flip(img):
-    flip_type = random.choice(["horizontal", "vertical"])
-    return np.fliplr(img) if flip_type == "horizontal" else np.flipud(img)
-
-
-def rotate_image(img):
-    angle = random.randint(-100, 100)
-    return geo_rotate(img, angle=angle, keep_resolution=True)
-
-
-def adjust_brightness_contrast(img):
-    alpha = random.uniform(0.8, 1.5)
-    beta = random.randint(15, 35)
-    return photo_bc(img, alpha=alpha, beta=beta)
-
-
-def blur_gaussian(img):
-    ksize = random.choice([1, 3, 5])
-    return kernel_blur(img, "gaussian", ksize=(ksize, ksize), gaussian_sigma=1)
-
-
-def no_change(img):
-    return img
-
-
-augmentations = [
-    random_flip,
-    rotate_image,
-    adjust_brightness_contrast,
-    blur_gaussian,
-    no_change,
-]
-
-
-def random_augmentation_pipeline(image_np, num_transforms=3):
-    selected = random.sample(augmentations, num_transforms)
-    out = image_np
-    for t in selected:
-        out = t(out)
-    return out
-
+        if self.transform:
+            tensor = self.transform(tensor)
+            
+        label = torch.tensor(self.y[idx], dtype=torch.long)
+        return tensor, label
 
 # -------------------------------
-#  Densenet training: DenseNet121 Model
+#  Densenet121 Training
 # -------------------------------
 
-
-def build_densenet(input_shape=(64, 64, 3), num_classes=2):
-    # Fresh DenseNet (no ImageNet normalization dependency)
-    base = DenseNet121(weights="imagenet", include_top=False, input_shape=input_shape)
-    base.trainable = False
-    x_in = layers.Input(shape=input_shape)
-    x = base(x_in, training=False)
-    x = layers.GlobalAveragePooling2D()(x)
-    x = layers.Dense(128, activation="relu")(x)
-    x = layers.Dense(num_classes, activation="softmax")(x)
-    model = models.Model(inputs=x_in, outputs=x)
-    model.compile(
-        optimizer=Adam(learning_rate=1e-4),
-        loss="sparse_categorical_crossentropy",
-        metrics=["accuracy"],
+def build_densenet(num_classes=2):
+    model = models.densenet121(weights=models.DenseNet121_Weights.IMAGENET1K_V1)
+    
+    for param in model.features.parameters():
+        param.requires_grad = False
+        
+    in_features = model.classifier.in_features
+    
+    model.classifier = nn.Sequential(
+        nn.Linear(in_features, 128),
+        nn.ReLU(),
+        nn.RNN(num_classes) if False else nn.Linear(128, num_classes) # Fix typo
+    )
+    model.classifier = nn.Sequential(
+        nn.Linear(in_features, 128),
+        nn.ReLU(),
+        nn.Linear(128, num_classes)
     )
     return model
-
-
-# -------------------------------
-#  Densenet121 training: image loading
-# -------------------------------
 
 
 def load_labeled_patches(patch_size: int = 64):
@@ -396,9 +317,11 @@ def load_labeled_patches(patch_size: int = 64):
             cname = labs.get(int(iid))
             if not cname or cname == "No label":
                 continue
+            
             patch = generate_cell_patch(
                 image=img, mask=(M == iid), patch_size=patch_size
             )
+            patch = normalize_image(patch)
 
             X.append(patch)
             y.append(name_to_idx[cname])
@@ -410,157 +333,137 @@ def load_labeled_patches(patch_size: int = 64):
             all_classes,
         )
 
-    X = np.stack(X, axis=0)
+    X = np.stack(X, axis=0) #(N, H, W, 3)
     y = np.array(y, dtype=np.int64)
     return X, y, all_classes
 
 
-class AugSequence(Sequence):
-    """class for loading image/label pairs into densenet for training."""
-
-    def __init__(
-        self, X, y, batch_size=32, num_transforms=3, shuffle=True, target_size=None
-    ):
-        self.X = X
-        self.y = y
-        self.bs = batch_size
-        self.nt = num_transforms
-        self.shuffle = shuffle
-        if target_size is None:
-            self.target_size = (X.shape[1], X.shape[2])  # (H, W)
-        else:
-            self.target_size = tuple(target_size)
-        self.indices = np.arange(len(X))
-        if self.shuffle:
-            np.random.shuffle(self.indices)
-
-    def __len__(self):
-        return max(1, int(np.ceil(len(self.X) / self.bs)))
-
-    @property
-    def num_batches(self):
-        return len(self)
-
-    def on_epoch_end(self):
-        if self.shuffle:
-            np.random.shuffle(self.indices)
-
-    def __getitem__(self, idx):
-        sl = slice(idx * self.bs, (idx + 1) * self.bs)
-        inds = self.indices[sl]
-        Xb = self.X[inds]
-        yb = self.y[inds]
-
-        out = []
-        for img in Xb:
-            img_uint8 = np.clip(img * 255.0, 0, 255).astype(np.uint8)
-            aug = random_augmentation_pipeline(img_uint8, num_transforms=self.nt)
-            aug = normalize_image(aug)
-            out.append(aug.astype(np.float32))
-
-        Xo = np.stack(out, axis=0)
-        return Xo, yb
-
-
 def finetune_densenet(input_size, batch_size, epochs, val_split):
-    # Load data
+    device = get_device()
+    
     X, y, classes = load_labeled_patches(patch_size=input_size)
     if X.shape[0] < 2 or len(np.unique(y)) < 2:
         st.warning("Need at least 2 samples and 2 classes. Add more labeled cells.")
-        return
+        return None, None, classes
 
-    # Split
     X_train, X_val, y_train, y_val = train_test_split(
         X, y, test_size=val_split, stratify=y, random_state=42
     )
 
-    # Data generators
-    train_gen = AugSequence(
-        X_train,
-        y_train,
-        batch_size=batch_size,
-        num_transforms=3,
-        shuffle=True,
-        target_size=(input_size, input_size),
-    )
-    val_gen = AugSequence(
-        X_val,
-        y_val,
-        batch_size=batch_size,
-        num_transforms=0,
-        shuffle=False,
-        target_size=(input_size, input_size),
-    )
+    train_ds = CellDataset(X_train, y_train, transform=apply_random_augmentations)
+    val_ds = CellDataset(X_val, y_val, transform=None)
+    
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
+    
 
-    # Class weights
-    class_weights = compute_class_weight(
-        class_weight="balanced", classes=np.arange(len(classes)), y=y
-    )
-    class_weights_dict = {i: float(w) for i, w in enumerate(class_weights)}
+    model = build_densenet(num_classes=len(classes))
+    model.to(device)
+    
+    optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    criterion = nn.CrossEntropyLoss()     
+    
+    cw = compute_class_weight("balanced", classes=np.unique(y), y=y)
+   
+    history = {"loss": [], "val_loss": []}
 
-    # Build model
-    model = build_densenet(
-        input_shape=(input_size, input_size, 3),
-        num_classes=len(classes),
-    )
+    best_val_loss = float('inf')
+    patience = 30
+    patience_counter = 0
+    best_model_state = None
+    
+    progress_bar = st.progress(0, text="Training started...")
+    
+    for epoch in range(epochs):
+        model.train()
+        running_loss = 0.0
+        
+        for inputs, labels in train_loader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            
+            running_loss += loss.item() * inputs.size(0)
+            
+        epoch_loss = running_loss / len(train_ds)
+        history["loss"].append(epoch_loss)
+        
+    
+        model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for inputs, labels in val_loader:
+                inputs, labels = inputs.to(device), labels.to(device)
+                outputs = model(inputs)
+                loss = criterion(outputs, labels)
+                val_loss += loss.item() * inputs.size(0)
+                
+        epoch_val_loss = val_loss / len(val_ds)
+        history["val_loss"].append(epoch_val_loss)
+        
+        progress_bar.progress((epoch + 1) / epochs, text=f"Epoch {epoch+1}/{epochs} | Loss: {epoch_loss:.4f} | Val: {epoch_val_loss:.4f}")
+        
+ 
+        if epoch_val_loss < best_val_loss:
+            best_val_loss = epoch_val_loss
+            best_model_state = model.state_dict()
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                st.info(f"Early stopping at epoch {epoch+1}")
+                break
 
-    # Train
-    es = EarlyStopping(
-        monitor="val_loss", patience=30, restore_best_weights=True, verbose=1
-    )
-    with st.spinner("Training DenseNet…"):
-        history = model.fit(
-            train_gen,
-            validation_data=val_gen,
-            epochs=epochs,
-            callbacks=[es],
-            class_weight=class_weights_dict,
-            verbose=0,
-        )
 
-    # Persist the model in session
+    if best_model_state:
+        model.load_state_dict(best_model_state)
+        
     ss["densenet_ckpt_name"] = "densenet_finetuned"
     ss["densenet_model"] = model
+    
+    return history, val_loader, classes
 
-    return history, val_gen, classes
 
+def evaluate_fine_tuned_densenet(history, val_loader, classes):
+    model = st.session_state.get("densenet_model")
+    if not model or not val_loader:
+        return
 
-def evaluate_fine_tuned_densenet(history, val_gen, classes):
-    # 1) collect full val set
-    Xv, yv = [], []
-    for i in range(len(val_gen)):
-        xb, yb = val_gen[i]
-        Xv.append(xb)
-        yv.append(yb)
-    Xv = np.concatenate(Xv, axis=0)
-    yv = np.concatenate(yv, axis=0)
+    device = get_device()
+    model.to(device)
+    model.eval()
+    
+    y_true = []
+    y_pred = []
+    
+    with torch.no_grad():
+        for inputs, labels in val_loader:
+            inputs = inputs.to(device)
+            outputs = model(inputs)
+            preds = torch.argmax(outputs, dim=1)
+            
+            y_true.extend(labels.cpu().numpy())
+            y_pred.extend(preds.cpu().numpy())
+            
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
 
-    # 2) ensure yv are class indices (not one-hot/probabilities)
-    if yv.ndim == 2:  # e.g., shape (N, C)
-        y_true = np.argmax(yv, axis=1)
-    else:
-        y_true = yv.astype(int)
+    st.info("Model stored in session. You can use it immediately from the **Classify cells** panel.")
 
-    # 3) predictions as indices
-    yprobs = st.session_state["densenet_model"].predict(Xv, verbose=0)
-    y_pred = np.argmax(yprobs, axis=1)
-
-    st.info(
-        "Model stored in session. You can use it immediately from the **Classify cells** panel."
-    )
-
-    # 4) metrics (macro often more informative; weighted also shown)
     acc = accuracy_score(y_true, y_pred)
     prec_m, rec_m, f1_m, _ = precision_recall_fscore_support(
         y_true, y_pred, average="macro", zero_division=0
     )
 
-    # 5a) plot densenet training losses and save to session state
-    train_losses = history.history.get("loss")
-    val_losses = history.history.get("val_loss", [])
+ 
+    train_losses = history.get("loss", [])
+    val_losses = history.get("val_loss", [])
     ss["densenet_training_losses"] = plot_loss_curve(train_losses, val_losses)
 
-    # 5b) plots training metrics and add to session state
     metrics = {
         "Accuracy": acc,
         "Precision": prec_m,
@@ -569,23 +472,15 @@ def evaluate_fine_tuned_densenet(history, val_gen, classes):
     }
     ss["densenet_training_metrics"] = plot_densenet_metrics(metrics)
 
-    # 5c) plot confusion matrix and add to session state
     cm = confusion_matrix(y_true, y_pred, labels=np.arange(len(classes)))
     st.session_state["densenet_confusion_matrix"] = plot_confusion_matrix(cm, classes)
 
 
 # -------------------------------
-#  Functions visualizing and downloading training metrics
+#  Visualization Functions
 # -------------------------------
 
-
 def plot_confusion_matrix(cm, class_names):
-    """
-    Interactive confusion matrix using Plotly.
-    - count + % annotated in each cell
-    - readable axes & colors
-    """
-
     n = len(class_names)
     text = [[f"{cm[i,j]}" for j in range(n)] for i in range(n)]
 
@@ -602,18 +497,16 @@ def plot_confusion_matrix(cm, class_names):
             showscale=False,
         )
     )
-
     fig.update_layout(
         title="Class Confusion Matrix",
         xaxis=dict(title="Predicted Class", tickangle=45),
         yaxis=dict(title="True Class", autorange="reversed"),
         width=max(500, 80 * n),
         height=max(400, 80 * n),
-        plot_bgcolor="white",  # ← inside plot area
-        paper_bgcolor="white",  # ← outside plot area
+        plot_bgcolor="white",
+        paper_bgcolor="white",
         margin=dict(l=80, r=80, t=40, b=80),
     )
-
     return fig
 
 
@@ -621,21 +514,14 @@ def plot_loss_curve(train_losses, test_losses):
     epochs = list(range(1, len(train_losses) + 1))
     fig = go.Figure()
     fig.add_scatter(
-        x=epochs,
-        y=train_losses,
-        mode="lines+markers",
-        name="train",
-        line=dict(color="#D3E4F4", width=2),
-        marker=dict(color="#D3E4F4", size=6),
+        x=epochs, y=train_losses, mode="lines+markers", name="train",
+        line=dict(color="#D3E4F4", width=2), marker=dict(color="#D3E4F4", size=6),
     )
-    e, v = zip(*[(e, v) for e, v in zip(epochs, test_losses) if v != 0])
+
+    e_val = list(range(1, len(test_losses) + 1))
     fig.add_scatter(
-        x=e,
-        y=v,
-        mode="lines+markers",
-        name="val",
-        line=dict(color="#004280", width=2),
-        marker=dict(color="#004280", size=6),
+        x=e_val, y=test_losses, mode="lines+markers", name="val",
+        line=dict(color="#004280", width=2), marker=dict(color="#004280", size=6),
     )
     fig.update_layout(
         title="Training vs. Validation Loss",
@@ -653,14 +539,8 @@ def plot_densenet_metrics(metrics):
     labels, values = list(metrics.keys()), list(metrics.values())
     fig = go.Figure(layout=dict(barcornerradius=10))
     fig.add_bar(
-        x=labels,
-        y=values,
-        text=[f"{v:.3f}" for v in values],
-        textposition="outside",
-        marker=dict(
-            color=["#EBF1F8", "#EBF1F8", "#EBF1F8", "#EBF1F8"],
-            line=dict(color="#004280", width=2),
-        ),
+        x=labels, y=values, text=[f"{v:.3f}" for v in values], textposition="outside",
+        marker=dict(color=["#EBF1F8"] * 4, line=dict(color="#004280", width=2)),
         name="metrics",
     )
     fig.update_yaxes(range=[0, 1.2])
@@ -682,7 +562,7 @@ def array_to_png_bytes(arr: np.ndarray) -> bytes:
     elif a.ndim == 3 and a.shape[2] > 3:
         a = a[:, :, :3]
 
-    if a.dtype.kind == "f":  # float -> assume 0..1 or 0..255
+    if a.dtype.kind == "f":
         a = np.clip(a, 0, 255)
         if a.max() <= 1.0:
             a = (a * 255.0).round()
@@ -701,22 +581,16 @@ def build_patchset_zip(patch_size: int = 64) -> bytes | None:
     buf, rows = io.BytesIO(), []
     ok = ordered_keys()
     parent_names = [st.session_state["images"][k]["name"].rsplit(".", 1)[0] for k in ok]
-    patch_per_img = int(np.ceil(X.shape[0] / len(ok))) if ok else X.shape[0]
 
     with ZipFile(buf, "w", ZIP_DEFLATED) as zf:
         for i in range(X.shape[0]):
-            parent = parent_names[min(i // patch_per_img, len(parent_names) - 1)]
-            fname = f"{parent}_patch_{i+1:04d}.png"
+            fname = f"patch_{i+1:04d}.png" 
             label_idx = int(y[i])
-            label_name = (
-                classes[label_idx]
-                if 0 <= label_idx < len(classes)
-                else f"class{label_idx}"
-            )
+            label_name = classes[label_idx] if 0 <= label_idx < len(classes) else "unknown"
+            
             zf.writestr(f"cell_patches/{fname}", array_to_png_bytes(X[i]))
-            rows.append(
-                {"filename": fname, "label_idx": label_idx, "label": label_name}
-            )
+            rows.append({"filename": fname, "label_idx": label_idx, "label": label_name})
+            
         zf.writestr(
             "cell_patch_labels.csv",
             pd.DataFrame(rows).to_csv(index=False).encode("utf-8"),
@@ -725,14 +599,13 @@ def build_patchset_zip(patch_size: int = 64) -> bytes | None:
 
 
 def build_densenet_zip_bytes(psize):
-    """Assemble the DenseNet training ZIP from session state. Returns bytes or None."""
+    """Assemble the DenseNet training ZIP from session state."""
     ss = st.session_state
     pzip = build_patchset_zip(psize)
     if not pzip:
         return None
 
     with ZipFile(io.BytesIO(pzip)) as zin:
-        # Training parameters
         labels = pd.read_csv(io.BytesIO(zin.read("cell_patch_labels.csv")))
         params = dict(
             input_size=int(psize),
@@ -745,43 +618,24 @@ def build_densenet_zip_bytes(psize):
 
         buf = io.BytesIO()
         with ZipFile(buf, "w", ZIP_DEFLATED) as zout:
-            # Add fine-tuned model if present
             if ss.get("densenet_model") is not None:
-                tmp = tempfile.NamedTemporaryFile(suffix=".keras", delete=False)
+                tmp = tempfile.NamedTemporaryFile(suffix=".pth", delete=False)
                 tmp_path = tmp.name
                 tmp.close()
-                ss["densenet_model"].save(tmp_path)
+                torch.save(ss["densenet_model"].state_dict(), tmp_path)
                 with open(tmp_path, "rb") as f:
-                    zout.writestr("densenet_finetuned.keras", f.read())
+                    zout.writestr("densenet_finetuned.pth", f.read())
                 os.remove(tmp_path)
 
-            # Training params CSV
             zout.writestr(
                 "training_params.csv",
-                pd.Series(params)
-                .rename_axis("parameter")
-                .reset_index(name="value")
-                .to_csv(index=False),
+                pd.Series(params).rename_axis("parameter").reset_index(name="value").to_csv(index=False),
             )
-
-            # Include original patchset files
             for n in zin.namelist():
                 zout.writestr(n, zin.read(n))
 
-            add_plotly_as_png_to_zip(
-                "densenet_training_losses", zout, "plots/densenet_training_losses.png"
-            )
-            add_plotly_as_png_to_zip(
-                "densenet_training_metrics",
-                zout,
-                "plots/densenet_performance_metrics.png",
-            )
-            add_plotly_as_png_to_zip(
-                "densenet_confusion_matrix",
-                zout,
-                "plots/densenet_confusion.png",
-                default_w=800,
-                default_h=600,
-            )
+            add_plotly_as_png_to_zip("densenet_training_losses", zout, "plots/densenet_training_losses.png")
+            add_plotly_as_png_to_zip("densenet_training_metrics", zout, "plots/densenet_performance_metrics.png")
+            add_plotly_as_png_to_zip("densenet_confusion_matrix", zout, "plots/densenet_confusion.png")
 
     return buf.getvalue()
