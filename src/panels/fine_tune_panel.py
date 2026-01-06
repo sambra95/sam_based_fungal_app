@@ -22,6 +22,7 @@ from src.helpers.cellpose_functions import (
     plot_iou_comparison,
     plot_pred_vs_true_counts,
     get_cellpose_model,
+    get_tuned_model,
     build_cellpose_zip_bytes,
 )
 from src.helpers.help_panels import (
@@ -388,13 +389,7 @@ def run_optuna(images, masks, base_model, channels, model_name):
     ch2 = int(st.session_state.get("cp_training_ch2"))
     channels = [ch1, ch2]
 
-    eval_model = models.CellposeModel(
-        gpu=core.use_gpu,
-        model_type=base_model if base_model != "scratch" else "cyto2",
-    )
-    ft_bytes = st.session_state.get("cellpose_model_bytes")
-    sd = torch.load(IO.BytesIO(ft_bytes), map_location="cpu")
-    eval_model.net.load_state_dict(sd)
+    eval_model = get_tuned_model()
 
     pb = st.progress(0.0, text="Starting Optuna optimisation…")
     results = []
@@ -549,27 +544,30 @@ def show_cellpose_training_plots():
             )
 
             # plot original vs predicted counts
-            st.plotly_chart(
-                st.session_state["cellpose_original_counts_comparison"],
-                width='stretch',
-            )
+            if "cellpose_original_counts_comparison" in st.session_state:
+                st.plotly_chart(
+                    st.session_state["cellpose_original_counts_comparison"],
+                    width='stretch',
+                )
 
         with col2:
 
             # plot iou comparison
-            st.plotly_chart(
-                st.session_state["cellpose_iou_comparison"],
-                width='stretch',
-            )
+            if "cellpose_iou_comparison" in st.session_state:
+                st.plotly_chart(
+                    st.session_state["cellpose_iou_comparison"],
+                    width='stretch',
+                )
 
             # plot tuned vs predicted counts
-            st.plotly_chart(
-                st.session_state["cellpose_tuned_counts_comparison"],
-                width='stretch',
-            )
+            if "cellpose_tuned_counts_comparison" in st.session_state:
+                st.plotly_chart(
+                    st.session_state["cellpose_tuned_counts_comparison"],
+                    width='stretch',
+                )
 
         # display grid search results if applicable
-        if ss.get("cp_do_gridsearch"):
+        if ss.get("cp_do_gridsearch") and "cp_grid_results_df" in st.session_state:
             st.dataframe(
                 st.session_state["cp_grid_results_df"],
                 hide_index=True,
@@ -580,11 +578,12 @@ def show_cellpose_training_plots():
             st.info("No hyperparameter tuning performed.")
 
         # button for downloading fine-tuned model, training data and training stats in a zip file
-        st.download_button(
-            "Download Cellpose model, dataset and training metrics (ZIP)",
-            data=ss["cp_zip_bytes"],
-            file_name="cellpose_training.zip",
-            mime="application/zip",
-            width='stretch',
-            type="primary",
-        )
+        if "cp_zip_bytes" in ss:
+            st.download_button(
+                "Download Cellpose model, dataset and training metrics (ZIP)",
+                data=ss["cp_zip_bytes"],
+                file_name="cellpose_training.zip",
+                mime="application/zip",
+                width='stretch',
+                type="primary",
+            )

@@ -164,6 +164,22 @@ def get_cellpose_model():
     return model
 
 
+def get_tuned_model():
+    """
+    Returns a CellposeModel3Proxy loaded with the fine-tuned weights
+    --> ensures architecture consistency (training is cp3)
+    """
+    ss = st.session_state
+    weights_path = get_cellpose_weights()
+    if not weights_path:
+        raise RuntimeError("No fine-tuned model weights found in session state.")
+    
+    return CellposeModel3Proxy(
+        pretrained_model=weights_path,
+        gpu=core.use_gpu
+    )
+
+
 def segment_with_cellpose(
     rec: dict,
     *,
@@ -270,6 +286,7 @@ WORKER_SCRIPT = str((HERE.parent / "segment_with_cellpose_sam_worker.py").resolv
 #training workspace
 TRAINING_PROJECT = str((HERE.parent / "training").resolve())
 TRAINING_WORKER_SCRIPT = str((HERE.parent / "training" / "finetune_worker.py").resolve())
+INFERENCE_WORKER_SCRIPT = str((HERE.parent / "training" / "inference_worker.py").resolve())
 
 
 class CellposeModel3Proxy:
