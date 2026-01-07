@@ -1,0 +1,21 @@
+[project]
+name = "mycol-training"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "cellpose==3.1.0",
+    "torch>=2.5.1",
+    "numpy>=1.26.4,<2.0.0",
+    "scipy",
+    "scikit-learn",
+    "tqdm",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cuda" }
+
