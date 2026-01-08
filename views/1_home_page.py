@@ -4,7 +4,8 @@ import streamlit as st
 from help_texts import intro_page
 
 # ---------- Config ----------
-SVG_DIR = Path("intro_images")
+BASE_DIR = Path(__file__).resolve().parent.parent
+SVG_DIR = BASE_DIR / "intro_images"
 TEXT_SIDECAREXT = (".md", ".txt")
 
 TEXT_BY_FILE: dict[str, str] = {
@@ -79,6 +80,8 @@ if "idx" not in st.session_state:
     st.session_state.idx = 0
 if not files:
     st.error("No SVG files found in `intro_images/`.")
+    st.info(f"Location: {BASE_DIR.absolute()}")
+    st.write(list(BASE_DIR.iterdir()))
     st.stop()
 
 col0, col1, col2 = st.columns([0.1, 1, 2])
