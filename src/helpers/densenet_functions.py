@@ -10,6 +10,11 @@ from zipfile import ZipFile, ZIP_DEFLATED
 import os
 import tempfile
 import plotly.graph_objects as go
+import subprocess
+from pathlib import Path
+import sys
+import time
+import shutil
 
 import torch
 import torch.nn as nn
@@ -25,8 +30,7 @@ from sklearn.metrics import (
 )
 
 # ---- bring in existing app helpers ----
-from src.helpers.state_ops import ordered_keys
-from src.helpers.cellpose_functions import normalize_image, add_plotly_as_png_to_zip
+from src.helpers.state_ops import ordered_keys, normalize_image, add_plotly_as_png_to_zip, plot_loss_curve
 
 ss = st.session_state
 
@@ -333,94 +337,180 @@ def load_labeled_patches(patch_size: int = 64):
     return X, y, all_classes
 
 
-def finetune_densenet(input_size, batch_size, epochs, val_split):
-    device = get_device()
+
+HERE = Path(__file__).resolve().parent
+DENSENET_WORKER_SCRIPT = str((HERE.parent / "training" / "densenet_worker.py").resolve())
+
+
+def start_densenet_training(input_size, batch_size, epochs, val_split):
+    """Starts DenseNet training asynchronously using a worker subprocess"""
     
     X, y, classes = load_labeled_patches(patch_size=input_size)
     if X.shape[0] < 2 or len(np.unique(y)) < 2:
         st.warning("Need at least 2 samples and 2 classes. Add more labeled cells.")
-        return None, None, classes
-
-    X_train, X_val, y_train, y_val = train_test_split(
-        X, y, test_size=val_split, stratify=y, random_state=42
+        return None
+    
+    tmpdir = tempfile.mkdtemp(prefix="densenet_train_")
+    in_path = Path(tmpdir) / "input.npz"
+    out_path = Path(tmpdir) / "output.npz"
+    log_path = Path(tmpdir) / "training.log"
+    
+    np.savez_compressed(
+        in_path,
+        X=X,
+        y=y,
+        classes=classes,
+        batch_size=batch_size,
+        epochs=epochs,
+        val_split=val_split
     )
-
-    train_ds = CellDataset(X_train, y_train, transform=apply_random_augmentations)
-    val_ds = CellDataset(X_val, y_val, transform=None)
     
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
+    cmd = [sys.executable, DENSENET_WORKER_SCRIPT, str(in_path), str(out_path)]
     
-
-    model = build_densenet(num_classes=len(classes))
-    model.to(device)
+    log_file = open(log_path, 'w')
     
-    optimizer = optim.Adam(model.parameters(), lr=1e-4)
-    criterion = nn.CrossEntropyLoss()     
+    process = subprocess.Popen(
+        cmd,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
     
-    cw = compute_class_weight("balanced", classes=np.unique(y), y=y)
-   
-    history = {"loss": [], "val_loss": []}
-
-    best_val_loss = float('inf')
-    patience = 30
-    patience_counter = 0
-    best_model_state = None
-    
-    progress_bar = st.progress(0, text="Training started...")
-    
-    for epoch in range(epochs):
-        model.train()
-        running_loss = 0.0
-        
-        for inputs, labels in train_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-            
-            optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-            
-            running_loss += loss.item() * inputs.size(0)
-            
-        epoch_loss = running_loss / len(train_ds)
-        history["loss"].append(epoch_loss)
-        
-    
-        model.eval()
-        val_loss = 0.0
-        with torch.no_grad():
-            for inputs, labels in val_loader:
-                inputs, labels = inputs.to(device), labels.to(device)
-                outputs = model(inputs)
-                loss = criterion(outputs, labels)
-                val_loss += loss.item() * inputs.size(0)
-                
-        epoch_val_loss = val_loss / len(val_ds)
-        history["val_loss"].append(epoch_val_loss)
-        
-        progress_bar.progress((epoch + 1) / epochs, text=f"Epoch {epoch+1}/{epochs} | Loss: {epoch_loss:.4f} | Val: {epoch_val_loss:.4f}")
-        
- 
-        if epoch_val_loss < best_val_loss:
-            best_val_loss = epoch_val_loss
-            best_model_state = model.state_dict()
-            patience_counter = 0
-        else:
-            patience_counter += 1
-            if patience_counter >= patience:
-                st.info(f"Early stopping at epoch {epoch+1}")
-                break
+    st.session_state["dn_training_job"] = {
+        "process": process,
+        "log_file": log_file,
+        "tmpdir": tmpdir,
+        "in_path": str(in_path),
+        "out_path": str(out_path),
+        "log_path": str(log_path),
+        "input_size": input_size,
+        "num_samples": X.shape[0],
+        "classes": classes,
+        "status": "running",
+    }
 
 
-    if best_model_state:
-        model.load_state_dict(best_model_state)
-        
-    ss["densenet_ckpt_name"] = "densenet_finetuned"
-    ss["densenet_model"] = model
+def check_densenet_training_status():
+    ss = st.session_state
+    job = ss.get("dn_training_job")
     
-    return history, val_loader, classes
+    if not job:
+        return None
+    
+    process = job["process"]
+    log_path = Path(job["log_path"])
+    returncode = process.poll()
+    
+    if log_path.exists():
+        try:
+            with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+                if content:  
+                    job["log_content"] = content
+        except Exception as e:
+            #TODO: handle better
+            pass
+    
+    if returncode is None:
+        return "running"
+    
+    if "log_file" in job:
+        try:
+            job["log_file"].flush()
+            job["log_file"].close()
+        except:
+            pass
+    
+    if log_path.exists():
+        try:
+            with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
+                job["log_content"] = f.read()
+        except:
+            pass
+    
+    out_path = Path(job["out_path"])
+    tmpdir = job["tmpdir"]
+    
+    try:
+        if returncode != 0:
+            job["status"] = "failed"
+            job["error"] = f"Training failed with exit code {returncode}\n\nLog:\n{job.get('log_content', 'No log available')}"
+            return "failed"
+        
+        with np.load(out_path, allow_pickle=True) as data:
+            model_state = data["model_state"].item()
+            history = data["history"].item()
+            classes = data["classes"]
+            metrics = data["metrics"].item()
+            cm = data["confusion_matrix"]
+        
+        model = build_densenet(num_classes=len(classes))
+        model.load_state_dict(model_state)
+        
+        ss["densenet_ckpt_name"] = "densenet_finetuned"
+        ss["densenet_model"] = model
+        
+        train_losses = history["loss"]
+        val_losses = history["val_loss"]
+        ss["densenet_training_losses"] = plot_loss_curve(train_losses, val_losses)
+        ss["densenet_training_metrics"] = plot_densenet_metrics(metrics)
+        ss["densenet_confusion_matrix"] = plot_confusion_matrix(cm, classes)
+        
+        job["status"] = "complete"
+        job["history"] = history
+        job["val_loader"] = None  #TODO: FIX can't serialize DataLoader
+        job["classes"] = classes
+        
+        return "complete"
+        
+    finally:
+        if os.path.exists(tmpdir):
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+
+def cancel_densenet_training():
+    ss = st.session_state
+    job = ss.get("dn_training_job")
+    
+    if not job:
+        return
+    
+    process = job["process"]
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+    
+    tmpdir = job["tmpdir"]
+    if os.path.exists(tmpdir):
+        shutil.rmtree(tmpdir, ignore_errors=True)
+    
+    job["status"] = "cancelled"
+
+
+def finetune_densenet(input_size, batch_size, epochs, val_split):
+    """
+    Legacy synchronous wrapper for backward compatibility.
+    For async training, use start_densenet_training() instead.
+    """
+    start_densenet_training(input_size, batch_size, epochs, val_split)
+    
+    while True:
+        status = check_densenet_training_status()
+        if status == "complete":
+            job = st.session_state["dn_training_job"]
+            return job["history"], job["val_loader"], job["classes"]
+        elif status == "failed":
+            job = st.session_state["dn_training_job"]
+            st.error("DenseNet training failed.")
+            with st.expander("Show Error Details"):
+                st.code(job["error"])
+            return None, None, []
+        time.sleep(1)
+
 
 
 def evaluate_fine_tuned_densenet(history, val_loader, classes):
@@ -505,29 +595,6 @@ def plot_confusion_matrix(cm, class_names):
     return fig
 
 
-def plot_loss_curve(train_losses, test_losses):
-    epochs = list(range(1, len(train_losses) + 1))
-    fig = go.Figure()
-    fig.add_scatter(
-        x=epochs, y=train_losses, mode="lines+markers", name="train",
-        line=dict(color="#D3E4F4", width=2), marker=dict(color="#D3E4F4", size=6),
-    )
-
-    e_val = list(range(1, len(test_losses) + 1))
-    fig.add_scatter(
-        x=e_val, y=test_losses, mode="lines+markers", name="val",
-        line=dict(color="#004280", width=2), marker=dict(color="#004280", size=6),
-    )
-    fig.update_layout(
-        title="Training vs. Validation Loss",
-        xaxis_title="Epoch",
-        yaxis_title="Loss",
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        height=400,
-        width=450,
-    )
-    return fig
 
 
 def plot_densenet_metrics(metrics):

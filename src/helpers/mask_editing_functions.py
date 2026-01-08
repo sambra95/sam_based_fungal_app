@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw
 
 from src.helpers.state_ops import get_current_rec
 from src.helpers.classifying_functions import classes_map_from_labels, create_colour_palette
-from src.helpers.cellpose_functions import normalize_image
+from src.helpers.state_ops import normalize_image
 from src.helpers.sam2_functions import (
     segment_with_sam2,
     _clear_boxes,

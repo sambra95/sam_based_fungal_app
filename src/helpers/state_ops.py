@@ -1,5 +1,8 @@
 from pathlib import Path
 import streamlit as st
+import numpy as np
+import plotly.io as pio
+import plotly.graph_objects as go
 
 
 def ensure_global_state() -> None:
@@ -158,3 +161,64 @@ def set_current_by_index(idx: int):
     if not ok:
         return
     st.session_state.current_key = ok[idx % len(ok)]
+
+
+def normalize_image(image: np.ndarray) -> np.ndarray:
+    """
+    Normalizes image intensities for Cellpose input.
+    Scales mean intensity to ~127.5 or full uint8 range if mean <= 0.
+    """
+    im = image.astype(np.float32)
+    if im.size == 0:
+        return im
+
+    mean_val = float(im.mean())
+    if mean_val <= 0:
+        # fallback: scale to full uint8 range
+        rng = float(im.max() - im.min())
+        im = (im - im.min()) / rng * 255.0 if rng > 0 else im * 0.0
+    else:
+        # scale by ratio so mean intensity ≈ 127.5 (mid-gray)
+        im = im * (127.5 / mean_val)
+
+    # ensure valid uint8 range
+    im = np.clip(im, 0, 255)
+    return im.astype(np.uint8)
+
+
+def add_plotly_as_png_to_zip(fig_key, zip_file, out_path, default_w=900, default_h=400):
+    """Adds a plotly figure stored in st.session_state[fig_key] as a PNG to the given zip file."""
+    fig = st.session_state[fig_key]
+    png = pio.to_image(
+        fig,
+        format="png",
+        scale=3,
+        width=int(getattr(fig.layout, "width", default_w) or default_w),
+        height=int(getattr(fig.layout, "height", default_h) or default_h),
+    )
+    zip_file.writestr(out_path, png)
+
+
+def plot_loss_curve(train_losses, test_losses):
+    epochs = list(range(1, len(train_losses) + 1))
+    fig = go.Figure()
+    fig.add_scatter(
+        x=epochs, y=train_losses, mode="lines+markers", name="train",
+        line=dict(color="#D3E4F4", width=2), marker=dict(color="#D3E4F4", size=6),
+    )
+
+    e_val = list(range(1, len(test_losses) + 1))
+    fig.add_scatter(
+        x=e_val, y=test_losses, mode="lines+markers", name="val",
+        line=dict(color="#004280", width=2), marker=dict(color="#004280", size=6),
+    )
+    fig.update_layout(
+        title="Training vs. Validation Loss",
+        xaxis_title="Epoch",
+        yaxis_title="Loss",
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        height=400,
+        width=450,
+    )
+    return fig
